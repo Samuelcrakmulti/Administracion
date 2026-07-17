@@ -1,14 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Car, Bike, Truck, X, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -21,45 +18,86 @@ const TIPOS = [
   { value: 'camion', label: 'Camión', icon: Truck },
 ];
 
+function nowDateStr() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().split('T')[0];
+}
+function nowTimeStr() {
+  return new Date().toTimeString().split(' ')[0].slice(0, 5);
+}
+
 interface Props {
   open: boolean;
+  estacionId: string | null;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export function ParqIngresoModal({ open, onClose, onSuccess }: Props) {
+export function ParqIngresoModal({ open, estacionId, onClose, onSuccess }: Props) {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     placa: '',
     tipo_vehiculo: 'automovil',
+    marca: '',
+    color: '',
     nombre_conductor: '',
     documento: '',
     telefono: '',
     espacio: '',
+    responsable: '',
     observaciones: '',
+    fecha_ingreso: nowDateStr(),
+    hora_ingreso: nowTimeStr(),
   });
+
+  useEffect(() => {
+    if (open) {
+      setForm((p) => ({ ...p, fecha_ingreso: nowDateStr(), hora_ingreso: nowTimeStr() }));
+    }
+  }, [open]);
 
   const set = (k: keyof typeof form, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.placa.trim()) { toast.error('Ingresa la placa del vehículo.'); return; }
+    if (!estacionId) { toast.error('Selecciona una estación.'); return; }
+
+    // Validate fecha/hora
+    const ingresoISO = new Date(`${form.fecha_ingreso}T${form.hora_ingreso}`).toISOString();
+    if (isNaN(new Date(ingresoISO).getTime())) { toast.error('Fecha u hora de ingreso inválida.'); return; }
+
+    // Check for duplicate active vehicle
+    const { data: existing } = await supabase
+      .from('parqueadero_registros')
+      .select('id')
+      .eq('placa', form.placa.trim().toUpperCase())
+      .eq('estado', 'activo')
+      .eq('estacion_id', estacionId)
+      .maybeSingle();
+    if (existing) { toast.error('Ya existe un vehículo activo con esa placa en esta estación.'); return; }
+
     setLoading(true);
     try {
       const { error } = await supabase.from('parqueadero_registros').insert({
+        estacion_id: estacionId,
         placa: form.placa.trim().toUpperCase(),
         tipo_vehiculo: form.tipo_vehiculo,
+        marca: form.marca.trim() || null,
+        color: form.color.trim() || null,
         nombre_conductor: form.nombre_conductor.trim() || null,
         documento: form.documento.trim() || null,
         telefono: form.telefono.trim() || null,
         espacio: form.espacio.trim() || null,
+        responsable: form.responsable.trim() || null,
         observaciones: form.observaciones.trim() || null,
-        hora_ingreso: new Date().toISOString(),
+        hora_ingreso: ingresoISO,
         estado: 'activo',
       });
       if (error) throw error;
       toast.success(`Vehículo ${form.placa.toUpperCase()} registrado.`);
-      setForm({ placa: '', tipo_vehiculo: 'automovil', nombre_conductor: '', documento: '', telefono: '', espacio: '', observaciones: '' });
+      setForm({ placa: '', tipo_vehiculo: 'automovil', marca: '', color: '', nombre_conductor: '', documento: '', telefono: '', espacio: '', responsable: '', observaciones: '', fecha_ingreso: nowDateStr(), hora_ingreso: nowTimeStr() });
       onSuccess();
       onClose();
     } catch (err) {
@@ -118,6 +156,18 @@ export function ParqIngresoModal({ open, onClose, onSuccess }: Props) {
             </div>
           </div>
 
+          {/* Marca + Color */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-600">Marca <span className="text-slate-400 font-normal">(opc.)</span></Label>
+              <Input value={form.marca} onChange={(e) => set('marca', e.target.value)} placeholder="Mazda, Renault…" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-600">Color <span className="text-slate-400 font-normal">(opc.)</span></Label>
+              <Input value={form.color} onChange={(e) => set('color', e.target.value)} placeholder="Rojo, Negro…" />
+            </div>
+          </div>
+
           {/* Conductor */}
           <div className="space-y-1.5">
             <Label htmlFor="conductor" className="text-xs font-semibold text-slate-600">Nombre del conductor <span className="text-slate-400 font-normal">(opcional)</span></Label>
@@ -136,16 +186,31 @@ export function ParqIngresoModal({ open, onClose, onSuccess }: Props) {
             </div>
           </div>
 
+          {/* Responsable */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-slate-600">Responsable del registro <span className="text-slate-400 font-normal">(opc.)</span></Label>
+            <Input value={form.responsable} onChange={(e) => set('responsable', e.target.value)} placeholder="Nombre de quien registra" />
+          </div>
+
           {/* Observaciones */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-slate-600">Observaciones <span className="text-slate-400 font-normal">(opc.)</span></Label>
             <Input value={form.observaciones} onChange={(e) => set('observaciones', e.target.value)} placeholder="Daño previo, modelo, color…" />
           </div>
 
-          {/* Hora ingreso (informativa) */}
-          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-            <span className="text-xs text-slate-500">Hora de ingreso</span>
-            <span className="text-sm font-semibold text-slate-900">{new Date().toLocaleTimeString('es-CO', { timeStyle: 'short' })}</span>
+          {/* Fecha y hora de ingreso manuales */}
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="mb-3 text-xs font-semibold text-slate-600">Fecha y hora de ingreso <span className="text-slate-400 font-normal">(editable)</span></p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500">Fecha</Label>
+                <Input type="date" value={form.fecha_ingreso} onChange={(e) => set('fecha_ingreso', e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500">Hora</Label>
+                <Input type="time" value={form.hora_ingreso} onChange={(e) => set('hora_ingreso', e.target.value)} />
+              </div>
+            </div>
           </div>
 
           <div className="flex gap-3 pt-1">

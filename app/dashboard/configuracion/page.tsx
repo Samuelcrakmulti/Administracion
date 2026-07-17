@@ -71,6 +71,8 @@ export default function ConfiguracionPage() {
   const [parqConfig, setParqConfig] = useState<null | {
     id?: string; total_cupos: number; tiempo_gracia_min: number;
     iva_pct: number; horario_apertura: string; horario_cierre: string;
+    cupos_carros?: number; cupos_motos?: number; cupos_especiales?: number;
+    cupos_discapacitados?: number; cupos_empleados?: number;
   }>(null);
   const [parqTarifas, setParqTarifas] = useState<{ tipo_vehiculo: string; tarifa_primera_hora: number; tarifa_hora_adicional: number; tarifa_maxima_dia: number }[]>([]);
 

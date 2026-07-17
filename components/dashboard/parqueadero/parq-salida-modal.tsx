@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Clock, Car, DollarSign, Loader2, CreditCard, Smartphone, Banknote, Building2 } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Clock, Car, DollarSign, Loader2, CreditCard, Smartphone, Banknote, Building2, AlertCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -47,6 +49,15 @@ function calcularCosto(minutos: number, tarifa: Tarifa, gracia: number): number 
   return Math.min(costo, tarifa.tarifa_maxima_dia);
 }
 
+function nowDateStr() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().split('T')[0];
+}
+function nowTimeStr() {
+  return new Date().toTimeString().split(' ')[0].slice(0, 5);
+}
+
 interface Props {
   open: boolean;
   registro: Registro | null;
@@ -60,12 +71,26 @@ export function ParqSalidaModal({ open, registro, tarifas, config, onClose, onSu
   const [metodoPago, setMetodoPago] = useState('Efectivo');
   const [descuento, setDescuento] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [fechaSalida, setFechaSalida] = useState(nowDateStr());
+  const [horaSalida, setHoraSalida] = useState(nowTimeStr());
+  const [errorFecha, setErrorFecha] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setFechaSalida(nowDateStr());
+      setHoraSalida(nowTimeStr());
+      setErrorFecha(null);
+    }
+  }, [open]);
 
   const calculo = useMemo(() => {
     if (!registro) return null;
-    const ahora = new Date();
+    const salidaISO = new Date(`${fechaSalida}T${horaSalida}`).toISOString();
     const ingreso = new Date(registro.hora_ingreso);
-    const minutos = Math.floor((ahora.getTime() - ingreso.getTime()) / 60000);
+    const salida = new Date(salidaISO);
+    if (isNaN(salida.getTime())) return null;
+    if (salida.getTime() < ingreso.getTime()) return { invalid: true as const };
+    const minutos = Math.floor((salida.getTime() - ingreso.getTime()) / 60000);
     const tarifa = tarifas.find((t) => t.tipo_vehiculo === registro.tipo_vehiculo) ?? {
       tipo_vehiculo: registro.tipo_vehiculo,
       tarifa_primera_hora: 3000, tarifa_hora_adicional: 2000, tarifa_maxima_dia: 25000,
@@ -75,26 +100,32 @@ export function ParqSalidaModal({ open, registro, tarifas, config, onClose, onSu
     const base = subtotal - descuentoVal;
     const ivaVal = (base * config.iva_pct) / 100;
     const total = base + ivaVal;
-    return { minutos, subtotal, descuentoVal, ivaVal, total, tarifa, ahora };
-  }, [registro, tarifas, config, descuento]);
+    return { invalid: false as const, minutos, subtotal, descuentoVal, ivaVal, total, tarifa, salidaISO };
+  }, [registro, tarifas, config, descuento, fechaSalida, horaSalida]);
+
+  useEffect(() => {
+    if (calculo?.invalid) {
+      setErrorFecha('La fecha/hora de salida no puede ser anterior a la de ingreso.');
+    } else {
+      setErrorFecha(null);
+    }
+  }, [calculo]);
 
   const handleConfirmar = async () => {
-    if (!registro || !calculo) return;
+    if (!registro || !calculo || calculo.invalid) return;
     setLoading(true);
     try {
-      // Insert finanza income
       const { data: finanza, error: fErr } = await supabase.from('finanzas').insert({
         tipo: 'Ingreso',
         categoria: 'Parqueadero',
         descripcion: `Parqueadero — ${TIPOS_LABEL[registro.tipo_vehiculo] || registro.tipo_vehiculo} ${registro.placa}`,
         valor: calculo.total,
-        fecha: new Date().toISOString().split('T')[0],
+        fecha: calculo.salidaISO.split('T')[0],
       }).select('id').single();
       if (fErr) throw fErr;
 
-      // Update registro
       const { error: rErr } = await supabase.from('parqueadero_registros').update({
-        hora_salida: calculo.ahora.toISOString(),
+        hora_salida: calculo.salidaISO,
         tiempo_minutos: calculo.minutos,
         subtotal: calculo.subtotal,
         descuento: calculo.descuentoVal,
@@ -146,60 +177,86 @@ export function ParqSalidaModal({ open, registro, tarifas, config, onClose, onSu
                   <p className="text-xs text-slate-500">{TIPOS_LABEL[registro.tipo_vehiculo] || registro.tipo_vehiculo}{registro.espacio ? ` · Espacio ${registro.espacio}` : ''}</p>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="flex items-center gap-1 text-slate-500">
-                  <Clock className="h-3.5 w-3.5" />
-                  <span className="text-sm font-semibold text-slate-900">{formatTiempo(calculo.minutos)}</span>
+              {!calculo.invalid && (
+                <div className="text-right">
+                  <div className="flex items-center gap-1 text-slate-500">
+                    <Clock className="h-3.5 w-3.5" />
+                    <span className="text-sm font-semibold text-slate-900">{formatTiempo(calculo.minutos)}</span>
+                  </div>
+                  <p className="text-xs text-slate-400">permanencia</p>
                 </div>
-                <p className="text-xs text-slate-400">permanencia</p>
+              )}
+            </div>
+          </div>
+
+          {/* Manual fecha/hora salida */}
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="mb-3 text-xs font-semibold text-slate-600">Fecha y hora de salida <span className="text-slate-400 font-normal">(editable)</span></p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500">Fecha</Label>
+                <Input type="date" value={fechaSalida} onChange={(e) => setFechaSalida(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500">Hora</Label>
+                <Input type="time" value={horaSalida} onChange={(e) => setHoraSalida(e.target.value)} />
               </div>
             </div>
-          </div>
-
-          {/* Cost breakdown */}
-          <div className="space-y-2 rounded-xl bg-slate-50/50 p-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Detalle del cobro</h3>
-            <div className="space-y-1.5">
-              <Row label="Tarifa aplicada" value={`${fmt(calculo.tarifa.tarifa_primera_hora)} primera hora + ${fmt(calculo.tarifa.tarifa_hora_adicional)}/h`} small />
-              <Row label="Subtotal" value={fmt(calculo.subtotal)} />
-              {calculo.descuentoVal > 0 && <Row label={`Descuento (${descuento}%)`} value={`- ${fmt(calculo.descuentoVal)}`} green />}
-              {calculo.ivaVal > 0 && <Row label={`IVA (${config.iva_pct}%)`} value={fmt(calculo.ivaVal)} />}
-              <div className="mt-2 border-t border-slate-200 pt-2">
-                <Row label="TOTAL A PAGAR" value={fmt(calculo.total)} bold />
+            {errorFecha && (
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600">
+                <AlertCircle className="h-3.5 w-3.5" />{errorFecha}
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Discount */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-slate-600">Descuento (%)</p>
-            <div className="flex gap-2">
-              {[0, 5, 10, 20, 50].map((d) => (
-                <button key={d} type="button" onClick={() => setDescuento(d)}
-                  className={cn('flex-1 rounded-lg border py-1.5 text-xs font-semibold transition-all', descuento === d ? 'border-primary bg-primary/5 text-primary' : 'border-slate-200 text-slate-500 hover:border-slate-300')}>
-                  {d}%
-                </button>
-              ))}
-            </div>
-          </div>
+          {!calculo.invalid && (
+            <>
+              {/* Cost breakdown */}
+              <div className="space-y-2 rounded-xl bg-slate-50/50 p-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Detalle del cobro</h3>
+                <div className="space-y-1.5">
+                  <Row label="Tarifa aplicada" value={`${fmt(calculo.tarifa.tarifa_primera_hora)} 1ra hora + ${fmt(calculo.tarifa.tarifa_hora_adicional)}/h`} small />
+                  <Row label="Subtotal" value={fmt(calculo.subtotal)} />
+                  {calculo.descuentoVal > 0 && <Row label={`Descuento (${descuento}%)`} value={`- ${fmt(calculo.descuentoVal)}`} green />}
+                  {calculo.ivaVal > 0 && <Row label={`IVA (${config.iva_pct}%)`} value={fmt(calculo.ivaVal)} />}
+                  <div className="mt-2 border-t border-slate-200 pt-2">
+                    <Row label="TOTAL A PAGAR" value={fmt(calculo.total)} bold />
+                  </div>
+                </div>
+              </div>
 
-          {/* Payment method */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-slate-600">Método de pago</p>
-            <div className="grid grid-cols-4 gap-2">
-              {METODOS.map((m) => (
-                <button key={m.value} type="button" onClick={() => setMetodoPago(m.value)}
-                  className={cn('flex flex-col items-center gap-1.5 rounded-xl border p-3 text-xs transition-all', metodoPago === m.value ? 'border-primary bg-primary/5 text-primary' : 'border-slate-200 text-slate-500 hover:border-slate-300')}>
-                  <m.icon className="h-4 w-4" />
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
+              {/* Discount */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-600">Descuento (%)</p>
+                <div className="flex gap-2">
+                  {[0, 5, 10, 20, 50].map((d) => (
+                    <button key={d} type="button" onClick={() => setDescuento(d)}
+                      className={cn('flex-1 rounded-lg border py-1.5 text-xs font-semibold transition-all', descuento === d ? 'border-primary bg-primary/5 text-primary' : 'border-slate-200 text-slate-500 hover:border-slate-300')}>
+                      {d}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Payment method */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-600">Método de pago</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {METODOS.map((m) => (
+                    <button key={m.value} type="button" onClick={() => setMetodoPago(m.value)}
+                      className={cn('flex flex-col items-center gap-1.5 rounded-xl border p-3 text-xs transition-all', metodoPago === m.value ? 'border-primary bg-primary/5 text-primary' : 'border-slate-200 text-slate-500 hover:border-slate-300')}>
+                      <m.icon className="h-4 w-4" />
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="flex gap-3 pt-1">
             <Button type="button" variant="outline" className="flex-1" onClick={onClose} disabled={loading}>Cancelar</Button>
-            <Button type="button" className="flex-1 gap-2 bg-emerald-600 hover:bg-emerald-700" onClick={handleConfirmar} disabled={loading}>
+            <Button type="button" className="flex-1 gap-2 bg-emerald-600 hover:bg-emerald-700" onClick={handleConfirmar} disabled={loading || calculo.invalid}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <DollarSign className="h-4 w-4" />}
               Confirmar cobro
             </Button>

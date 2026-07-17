@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Loader2, Settings, DollarSign } from 'lucide-react';
+import { Save, Loader2, Settings, DollarSign, ParkingSquare } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,8 @@ import { toast } from 'sonner';
 type Config = {
   id?: string; total_cupos: number; tiempo_gracia_min: number;
   iva_pct: number; horario_apertura: string; horario_cierre: string;
+  cupos_carros?: number; cupos_motos?: number; cupos_especiales?: number;
+  cupos_discapacitados?: number; cupos_empleados?: number;
 };
 type Tarifa = {
   id?: string; tipo_vehiculo: string; tarifa_primera_hora: number;
@@ -34,32 +36,51 @@ const DEFAULT_TARIFAS: Tarifa[] = [
   { tipo_vehiculo: 'camion', tarifa_primera_hora: 6000, tarifa_hora_adicional: 4000, tarifa_maxima_dia: 50000 },
 ];
 
+const DEFAULT_CONFIG: Config = {
+  total_cupos: 50, tiempo_gracia_min: 15, iva_pct: 0,
+  horario_apertura: '06:00', horario_cierre: '22:00',
+  cupos_carros: 30, cupos_motos: 10, cupos_especiales: 5,
+  cupos_discapacitados: 3, cupos_empleados: 2,
+};
+
+function withDefaults(c: Config | null | undefined): Config {
+  return {
+    ...DEFAULT_CONFIG,
+    ...(c ?? {}),
+    cupos_carros: c?.cupos_carros ?? DEFAULT_CONFIG.cupos_carros,
+    cupos_motos: c?.cupos_motos ?? DEFAULT_CONFIG.cupos_motos,
+    cupos_especiales: c?.cupos_especiales ?? DEFAULT_CONFIG.cupos_especiales,
+    cupos_discapacitados: c?.cupos_discapacitados ?? DEFAULT_CONFIG.cupos_discapacitados,
+    cupos_empleados: c?.cupos_empleados ?? DEFAULT_CONFIG.cupos_empleados,
+  };
+}
+
 interface Props {
-  config: Config | null;
-  tarifas: Tarifa[];
-  onSaved: () => void;
+  config?: Config | null;
+  tarifas?: Tarifa[];
+  estacionId?: string | null;
+  onSaved?: () => void;
 }
 
 function fmt(v: number) {
   return v.toLocaleString('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 }
 
-export function ParqConfiguracion({ config: configProp, tarifas: tarifasProp, onSaved }: Props) {
-  const [config, setConfig] = useState<Config>(configProp ?? {
-    total_cupos: 50, tiempo_gracia_min: 15, iva_pct: 0,
-    horario_apertura: '06:00', horario_cierre: '22:00',
-  });
+export function ParqConfiguracion({ config: configProp, tarifas: tarifasProp, estacionId, onSaved }: Props) {
+  const handleSaved = onSaved ?? (() => {});
+  const [config, setConfig] = useState<Config>(withDefaults(configProp));
   const [tarifas, setTarifas] = useState<Tarifa[]>(
-    TIPOS.map((t) => tarifasProp.find((tp) => tp.tipo_vehiculo === t.value) ?? DEFAULT_TARIFAS.find((d) => d.tipo_vehiculo === t.value)!)
+    TIPOS.map((t) => (tarifasProp ?? []).find((tp) => tp.tipo_vehiculo === t.value) ?? DEFAULT_TARIFAS.find((d) => d.tipo_vehiculo === t.value)!)
   );
   const [savingConfig, setSavingConfig] = useState(false);
   const [savingTarifas, setSavingTarifas] = useState(false);
 
   useEffect(() => {
-    if (configProp) setConfig(configProp);
+    if (configProp) setConfig(withDefaults(configProp));
   }, [configProp]);
   useEffect(() => {
-    setTarifas(TIPOS.map((t) => tarifasProp.find((tp) => tp.tipo_vehiculo === t.value) ?? DEFAULT_TARIFAS.find((d) => d.tipo_vehiculo === t.value)!));
+    const tp = tarifasProp ?? [];
+    setTarifas(TIPOS.map((t) => tp.find((x) => x.tipo_vehiculo === t.value) ?? DEFAULT_TARIFAS.find((d) => d.tipo_vehiculo === t.value)!));
   }, [tarifasProp]);
 
   const setC = (k: keyof Config, v: string | number) => setConfig((p) => ({ ...p, [k]: v }));
@@ -67,18 +88,19 @@ export function ParqConfiguracion({ config: configProp, tarifas: tarifasProp, on
     setTarifas((prev) => prev.map((t) => t.tipo_vehiculo === tipo ? { ...t, [k]: v } : t));
 
   const handleSaveConfig = async () => {
+    if (!estacionId) { toast.error('Selecciona una estación.'); return; }
     setSavingConfig(true);
     try {
       if (config.id) {
         const { error } = await supabase.from('parqueadero_config').update({ ...config, updated_at: new Date().toISOString() }).eq('id', config.id);
         if (error) throw error;
       } else {
-        const { data, error } = await supabase.from('parqueadero_config').insert({ ...config }).select('id').single();
+        const { data, error } = await supabase.from('parqueadero_config').insert({ ...config, estacion_id: estacionId }).select('id').single();
         if (error) throw error;
         setConfig((p) => ({ ...p, id: data.id }));
       }
       toast.success('Configuración guardada.');
-      onSaved();
+      handleSaved();
     } catch (err) {
       toast.error('Error al guardar la configuración.');
       console.error(err);
@@ -88,6 +110,7 @@ export function ParqConfiguracion({ config: configProp, tarifas: tarifasProp, on
   };
 
   const handleSaveTarifas = async () => {
+    if (!estacionId) { toast.error('Selecciona una estación.'); return; }
     setSavingTarifas(true);
     try {
       for (const t of tarifas) {
@@ -96,11 +119,12 @@ export function ParqConfiguracion({ config: configProp, tarifas: tarifasProp, on
           tarifa_primera_hora: t.tarifa_primera_hora,
           tarifa_hora_adicional: t.tarifa_hora_adicional,
           tarifa_maxima_dia: t.tarifa_maxima_dia,
-        }, { onConflict: 'user_id,tipo_vehiculo' });
+          estacion_id: estacionId,
+        }, { onConflict: 'user_id,estacion_id,tipo_vehiculo' });
         if (error) throw error;
       }
       toast.success('Tarifas guardadas.');
-      onSaved();
+      handleSaved();
     } catch (err) {
       toast.error('Error al guardar las tarifas.');
       console.error(err);
@@ -143,6 +167,37 @@ export function ParqConfiguracion({ config: configProp, tarifas: tarifasProp, on
             </div>
           </div>
         </div>
+
+        {/* Space distribution */}
+        <div className="mt-5 rounded-xl bg-slate-50/50 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <ParkingSquare className="h-4 w-4 text-slate-500" />
+            <p className="text-xs font-semibold text-slate-600">Distribución de espacios</p>
+          </div>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-500">Carros</Label>
+              <Input type="number" min={0} value={config.cupos_carros ?? 0} onChange={(e) => setC('cupos_carros', parseInt(e.target.value) || 0)} className="text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-500">Motos</Label>
+              <Input type="number" min={0} value={config.cupos_motos ?? 0} onChange={(e) => setC('cupos_motos', parseInt(e.target.value) || 0)} className="text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-500">Especiales</Label>
+              <Input type="number" min={0} value={config.cupos_especiales ?? 0} onChange={(e) => setC('cupos_especiales', parseInt(e.target.value) || 0)} className="text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-500">Discapacitados</Label>
+              <Input type="number" min={0} value={config.cupos_discapacitados ?? 0} onChange={(e) => setC('cupos_discapacitados', parseInt(e.target.value) || 0)} className="text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-500">Empleados</Label>
+              <Input type="number" min={0} value={config.cupos_empleados ?? 0} onChange={(e) => setC('cupos_empleados', parseInt(e.target.value) || 0)} className="text-sm" />
+            </div>
+          </div>
+        </div>
+
         <div className="mt-5 flex justify-end">
           <Button onClick={handleSaveConfig} disabled={savingConfig} className="gap-2">
             {savingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
