@@ -6,6 +6,7 @@ import {
   Package, Map, Settings2, ChevronRight, Loader2,
   MapPin, CheckCircle2, AlertTriangle, RefreshCw, Activity,
   History, ClipboardList, BadgeCheck, ShieldCheck,
+  Database, Truck, Tag, BarChart3, BellRing, ClipboardCheck,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,8 +25,15 @@ import { EstCuadreForm } from '@/components/dashboard/estaciones/est-cuadre-form
 import { EstEntregaTurno } from '@/components/dashboard/estaciones/est-entrega-turno';
 import { EstAprobacion } from '@/components/dashboard/estaciones/est-aprobacion';
 import { EstHistorial } from '@/components/dashboard/estaciones/est-historial';
+import { EstTanques, type Tanque } from '@/components/dashboard/estaciones/est-tanques';
+import { EstInventarioDiario } from '@/components/dashboard/estaciones/est-inventario-diario';
+import { EstCarrotanques } from '@/components/dashboard/estaciones/est-carrotanques';
+import { EstHistorialInventario } from '@/components/dashboard/estaciones/est-historial-inventario';
+import { EstPreciosCombustible } from '@/components/dashboard/estaciones/est-precios-combustible';
+import { EstDashboardInventario } from '@/components/dashboard/estaciones/est-dashboard-inventario';
+import { EstAlertasInventario } from '@/components/dashboard/estaciones/est-alertas-inventario';
 
-type SectionKey = 'dashboard' | 'operacion' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config';
+type SectionKey = 'dashboard' | 'operacion' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config' | 'tanques' | 'inv-inicial' | 'inv-final' | 'carrotanques' | 'hist-inventario' | 'precios' | 'dash-inventario' | 'alertas-inventario';
 
 const NAV_GROUPS = [
   {
@@ -36,6 +44,19 @@ const NAV_GROUPS = [
       { key: 'entrega' as SectionKey, label: 'Entrega de Turno', icon: BadgeCheck },
       { key: 'aprobacion' as SectionKey, label: 'Aprobación', icon: ShieldCheck },
       { key: 'historial' as SectionKey, label: 'Historial', icon: History },
+    ],
+  },
+  {
+    label: 'Inventario',
+    items: [
+      { key: 'dash-inventario' as SectionKey, label: 'Dashboard Inventario', icon: BarChart3 },
+      { key: 'tanques' as SectionKey, label: 'Tanques', icon: Database },
+      { key: 'inv-inicial' as SectionKey, label: 'Inventario Inicial', icon: ClipboardList },
+      { key: 'inv-final' as SectionKey, label: 'Inventario Final', icon: ClipboardCheck },
+      { key: 'carrotanques' as SectionKey, label: 'Carrotanques', icon: Truck },
+      { key: 'hist-inventario' as SectionKey, label: 'Historial Inventario', icon: History },
+      { key: 'precios' as SectionKey, label: 'Precios', icon: Tag },
+      { key: 'alertas-inventario' as SectionKey, label: 'Alertas', icon: BellRing },
     ],
   },
   {
@@ -84,6 +105,7 @@ export default function EstacionesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [turnoActivo, setTurnoActivo] = useState<Turno | null>(null);
   const [lecturasActivas, setLecturasActivas] = useState<Lectura[]>([]);
+  const [tanques, setTanques] = useState<Tanque[]>([]);
 
   const selectedEst = estaciones.find((e) => e.id === selectedId) ?? null;
 
@@ -102,14 +124,16 @@ export default function EstacionesPage() {
   }, [selectedId]);
 
   const fetchStation = useCallback(async (stationId: string) => {
-    const [{ data: il }, { data: su }, { data: ma }] = await Promise.all([
+    const [{ data: il }, { data: su }, { data: ma }, { data: ta }] = await Promise.all([
       supabase.from('est_islas').select('*').eq('estacion_id', stationId).order('orden'),
       supabase.from('est_surtidores').select('*').eq('estacion_id', stationId).order('numero'),
       supabase.from('est_mangueras').select('*').eq('estacion_id', stationId).order('numero'),
+      supabase.from('est_tanques').select('*').eq('estacion_id', stationId).order('created_at'),
     ]);
     setIslas((il as Isla[]) ?? []);
     setSurtidores((su as Surtidor[]) ?? []);
     setMangueras((ma as Manguera[]) ?? []);
+    setTanques((ta as Tanque[]) ?? []);
   }, []);
 
   useEffect(() => { if (user) fetchAll(); }, [user, fetchAll]);
@@ -150,7 +174,7 @@ export default function EstacionesPage() {
   const turnoEstadoBadge = turnoActivo ? ESTADO_BADGE[turnoActivo.estado] : null;
 
   const renderContent = () => {
-    const needsStation = !['estaciones', 'productos', 'dashboard'].includes(active);
+    const needsStation = !['estaciones', 'productos', 'dashboard'].includes(active) && !active.startsWith('dash-inventario') && active !== 'precios';
     if (needsStation && !selectedEst) {
       return (
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 py-16 text-center">
@@ -251,6 +275,22 @@ export default function EstacionesPage() {
         return <EstProductos productos={productos} onRefresh={handleRefresh} />;
       case 'mapa':
         return selectedEst ? <EstMapa estacion={selectedEst} islas={islas} surtidores={surtidores} mangueras={mangueras} productos={productos} /> : null;
+      case 'tanques':
+        return selectedEst ? <EstTanques estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} productos={productos} onRefresh={handleRefresh} /> : null;
+      case 'inv-inicial':
+        return selectedEst ? <EstInventarioDiario estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} tanques={tanques} productos={productos} tipo="inicial" onRefresh={handleRefresh} /> : null;
+      case 'inv-final':
+        return selectedEst ? <EstInventarioDiario estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} tanques={tanques} productos={productos} tipo="final" onRefresh={handleRefresh} /> : null;
+      case 'carrotanques':
+        return selectedEst ? <EstCarrotanques estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} tanques={tanques} productos={productos} onRefresh={handleRefresh} /> : null;
+      case 'hist-inventario':
+        return selectedEst ? <EstHistorialInventario estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} tanques={tanques} productos={productos} /> : null;
+      case 'precios':
+        return selectedEst ? <EstPreciosCombustible estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} productos={productos} onRefresh={handleRefresh} /> : null;
+      case 'dash-inventario':
+        return selectedEst ? <EstDashboardInventario estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} tanques={tanques} productos={productos} /> : null;
+      case 'alertas-inventario':
+        return selectedEst ? <EstAlertasInventario estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} tanques={tanques} productos={productos} /> : null;
       case 'config':
         return (
           <div className="space-y-5">
