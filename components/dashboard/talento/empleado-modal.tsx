@@ -19,6 +19,7 @@ type Empleado = {
   fecha_ingreso: string; tipo_contrato: string; salario: number; comision_pct: number;
   estado: string; eps: string; arl: string; banco: string; numero_cuenta: string;
   contacto_emergencia_nombre: string; contacto_emergencia_telefono: string; observaciones: string;
+  estacion_id?: string | null;
 };
 
 const EMPTY: Empleado = {
@@ -34,11 +35,12 @@ type Tab = 'personal' | 'laboral' | 'detalle';
 interface Props {
   open: boolean;
   empleado: Empleado | null;
+  estacionId: string | null;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export function EmpleadoModal({ open, empleado, onClose, onSuccess }: Props) {
+export function EmpleadoModal({ open, empleado, estacionId, onClose, onSuccess }: Props) {
   const [tab, setTab] = useState<Tab>('personal');
   const [form, setForm] = useState<Empleado>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -58,7 +60,7 @@ export function EmpleadoModal({ open, empleado, onClose, onSuccess }: Props) {
     }
     setSaving(true);
     try {
-      const payload = { ...form };
+      const payload = { ...form, estacion_id: estacionId };
       if ((payload as Empleado & { id?: string }).id) {
         const { id, ...rest } = payload as Empleado & { id: string };
         const { error } = await supabase.from('rrhh_empleados').update(rest).eq('id', id);

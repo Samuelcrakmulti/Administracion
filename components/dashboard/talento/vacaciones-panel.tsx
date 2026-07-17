@@ -33,9 +33,9 @@ function diasDisponibles(emp: Empleado, vacaciones: Vacacion[]): number {
   return Math.max(0, devengados - usados);
 }
 
-interface Props { empleados: Empleado[] }
+interface Props { empleados: Empleado[]; estacionId: string | null }
 
-export function VacacionesPanel({ empleados }: Props) {
+export function VacacionesPanel({ empleados, estacionId }: Props) {
   const [vacaciones, setVacaciones] = useState<Vacacion[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -45,7 +45,9 @@ export function VacacionesPanel({ empleados }: Props) {
 
   const fetchVacaciones = async () => {
     setLoading(true);
-    const { data } = await supabase.from('rrhh_vacaciones').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('rrhh_vacaciones').select('*').order('created_at', { ascending: false });
+    if (estacionId) query = query.eq('estacion_id', estacionId);
+    const { data } = await query;
     setVacaciones((data as Vacacion[]) ?? []);
     setLoading(false);
   };
@@ -62,7 +64,7 @@ export function VacacionesPanel({ empleados }: Props) {
     setSaving(true);
     try {
       const dias = calcDias(form.fecha_inicio, form.fecha_fin);
-      const { error } = await supabase.from('rrhh_vacaciones').insert({ ...form, dias, estado: 'solicitado' });
+      const { error } = await supabase.from('rrhh_vacaciones').insert({ ...form, dias, estado: 'solicitado', estacion_id: estacionId });
       if (error) throw error;
       toast.success('Solicitud de vacaciones registrada.');
       setShowForm(false);

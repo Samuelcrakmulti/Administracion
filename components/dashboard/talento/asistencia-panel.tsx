@@ -30,9 +30,9 @@ function calcHoras(entrada: string | null, salida: string | null): number | null
   return Math.max(0, (h2 * 60 + m2 - h1 * 60 - m1) / 60);
 }
 
-interface Props { empleados: Empleado[] }
+interface Props { empleados: Empleado[]; estacionId: string | null }
 
-export function AsistenciaPanel({ empleados }: Props) {
+export function AsistenciaPanel({ empleados, estacionId }: Props) {
   const [fecha, setFecha] = useState(isoDate(new Date()));
   const [asistencias, setAsistencias] = useState<Asistencia[]>([]);
   const [loading, setLoading] = useState(false);
@@ -40,7 +40,9 @@ export function AsistenciaPanel({ empleados }: Props) {
 
   const fetchAsistencias = async () => {
     setLoading(true);
-    const { data } = await supabase.from('rrhh_asistencia').select('*').eq('fecha', fecha);
+    let query = supabase.from('rrhh_asistencia').select('*').eq('fecha', fecha);
+    if (estacionId) query = query.eq('estacion_id', estacionId);
+    const { data } = await query;
     setAsistencias(data ?? []);
     setLoading(false);
   };
@@ -72,7 +74,7 @@ export function AsistenciaPanel({ empleados }: Props) {
     try {
       const record = getOrCreate(empId);
       const horas = calcHoras(record.hora_entrada, record.hora_salida);
-      const payload = { ...record, horas_trabajadas: horas };
+      const payload = { ...record, horas_trabajadas: horas, estacion_id: estacionId };
       if (record.id) {
         const { error } = await supabase.from('rrhh_asistencia').update(payload).eq('id', record.id);
         if (error) throw error;

@@ -38,9 +38,9 @@ function calcNomina(emp: Empleado): Omit<Nomina, 'id' | 'estado' | 'finanza_id'>
   };
 }
 
-interface Props { empleados: Empleado[] }
+interface Props { empleados: Empleado[]; estacionId: string | null }
 
-export function NominaPanel({ empleados }: Props) {
+export function NominaPanel({ empleados, estacionId }: Props) {
   const now = new Date();
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [anio, setAnio] = useState(now.getFullYear());
@@ -51,7 +51,9 @@ export function NominaPanel({ empleados }: Props) {
 
   const fetchNominas = async () => {
     setLoading(true);
-    const { data } = await supabase.from('rrhh_nomina').select('*').eq('mes', mes).eq('anio', anio);
+    let query = supabase.from('rrhh_nomina').select('*').eq('mes', mes).eq('anio', anio);
+    if (estacionId) query = query.eq('estacion_id', estacionId);
+    const { data } = await query;
     setNominas((data as Nomina[]) ?? []);
     setLoading(false);
   };
@@ -72,7 +74,7 @@ export function NominaPanel({ empleados }: Props) {
       for (const emp of activos) {
         const existing = nominas.find((n) => n.empleado_id === emp.id);
         if (!existing) {
-          const payload = { ...calcNomina(emp), mes, anio, estado: 'pendiente' };
+          const payload = { ...calcNomina(emp), mes, anio, estado: 'pendiente', estacion_id: estacionId };
           await supabase.from('rrhh_nomina').insert(payload);
         }
       }

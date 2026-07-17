@@ -41,9 +41,9 @@ function getWeekDays(anchor: Date): Date[] {
 
 function isoDate(d: Date) { return d.toISOString().split('T')[0]; }
 
-interface Props { empleados: Empleado[] }
+interface Props { empleados: Empleado[]; estacionId: string | null }
 
-export function TurnosCalendario({ empleados }: Props) {
+export function TurnosCalendario({ empleados, estacionId }: Props) {
   const [anchor, setAnchor] = useState(new Date());
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [loading, setLoading] = useState(false);
@@ -56,7 +56,9 @@ export function TurnosCalendario({ empleados }: Props) {
   const fetchTurnos = async () => {
     setLoading(true);
     const from = isoDate(week[0]); const to = isoDate(week[6]);
-    const { data } = await supabase.from('rrhh_turnos').select('*').gte('fecha', from).lte('fecha', to);
+    let query = supabase.from('rrhh_turnos').select('*').gte('fecha', from).lte('fecha', to);
+    if (estacionId) query = query.eq('estacion_id', estacionId);
+    const { data } = await query;
     setTurnos(data ?? []);
     setLoading(false);
   };
@@ -70,7 +72,7 @@ export function TurnosCalendario({ empleados }: Props) {
     if (!form.empleado_id) { toast.error('Selecciona un empleado.'); return; }
     setSaving(true);
     try {
-      const { error } = await supabase.from('rrhh_turnos').insert({ ...form, hora_inicio: form.tipo === 'descanso' ? null : form.hora_inicio, hora_fin: form.tipo === 'descanso' ? null : form.hora_fin });
+      const { error } = await supabase.from('rrhh_turnos').insert({ ...form, estacion_id: estacionId, hora_inicio: form.tipo === 'descanso' ? null : form.hora_inicio, hora_fin: form.tipo === 'descanso' ? null : form.hora_fin });
       if (error) throw error;
       toast.success('Turno guardado.');
       setShowForm(false);
