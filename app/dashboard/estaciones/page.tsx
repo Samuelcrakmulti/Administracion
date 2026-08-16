@@ -32,14 +32,16 @@ import { EstHistorialInventario } from '@/components/dashboard/estaciones/est-hi
 import { EstPreciosCombustible } from '@/components/dashboard/estaciones/est-precios-combustible';
 import { EstDashboardInventario } from '@/components/dashboard/estaciones/est-dashboard-inventario';
 import { EstAlertasInventario } from '@/components/dashboard/estaciones/est-alertas-inventario';
+import { EstCierreOperativo } from '@/components/dashboard/estaciones/est-cierre-operativo';
 
-type SectionKey = 'dashboard' | 'operacion' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config' | 'tanques' | 'inv-inicial' | 'inv-final' | 'carrotanques' | 'hist-inventario' | 'precios' | 'dash-inventario' | 'alertas-inventario';
+type SectionKey = 'dashboard' | 'operacion' | 'cierre' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config' | 'tanques' | 'inv-inicial' | 'inv-final' | 'carrotanques' | 'hist-inventario' | 'precios' | 'dash-inventario' | 'alertas-inventario';
 
 const NAV_GROUPS = [
   {
     label: 'Operación',
     items: [
       { key: 'operacion' as SectionKey, label: 'Operación Diaria', icon: Activity },
+      { key: 'cierre' as SectionKey, label: 'Cierre Operativo', icon: ClipboardCheck },
       { key: 'cuadre' as SectionKey, label: 'Cuadre de Caja', icon: ClipboardList },
       { key: 'entrega' as SectionKey, label: 'Entrega de Turno', icon: BadgeCheck },
       { key: 'aprobacion' as SectionKey, label: 'Aprobación', icon: ShieldCheck },
@@ -200,6 +202,9 @@ export default function EstacionesPage() {
           <EstOperacion estacion={selectedEst} islas={islas} surtidores={surtidores} mangueras={mangueras}
             productos={productos} onRefresh={handleRefresh} onTurnoChange={handleTurnoChange} />
         ) : null;
+
+      case 'cierre':
+        return selectedEst ? <EstCierreOperativo estacion={selectedEst} onRefresh={handleRefresh} /> : null;
 
       case 'cuadre':
         if (!selectedEst) return null;
