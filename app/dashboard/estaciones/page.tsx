@@ -33,8 +33,10 @@ import { EstPreciosCombustible } from '@/components/dashboard/estaciones/est-pre
 import { EstDashboardInventario } from '@/components/dashboard/estaciones/est-dashboard-inventario';
 import { EstAlertasInventario } from '@/components/dashboard/estaciones/est-alertas-inventario';
 import { EstCierreOperativo } from '@/components/dashboard/estaciones/est-cierre-operativo';
+import { EstGalonajeDashboard } from '@/components/dashboard/estaciones/est-galonaje-dashboard';
+import { EstGalonajeHistorial } from '@/components/dashboard/estaciones/est-galonaje-historial';
 
-type SectionKey = 'dashboard' | 'operacion' | 'cierre' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config' | 'tanques' | 'inv-inicial' | 'inv-final' | 'carrotanques' | 'hist-inventario' | 'precios' | 'dash-inventario' | 'alertas-inventario';
+type SectionKey = 'dashboard' | 'operacion' | 'cierre' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config' | 'tanques' | 'inv-inicial' | 'inv-final' | 'carrotanques' | 'hist-inventario' | 'precios' | 'dash-inventario' | 'alertas-inventario' | 'galonaje-dashboard' | 'galonaje-historial';
 
 const NAV_GROUPS = [
   {
@@ -42,6 +44,8 @@ const NAV_GROUPS = [
     items: [
       { key: 'operacion' as SectionKey, label: 'Operación Diaria', icon: Activity },
       { key: 'cierre' as SectionKey, label: 'Cierre Operativo', icon: ClipboardCheck },
+      { key: 'galonaje-dashboard' as SectionKey, label: 'Galonaje Dashboard', icon: BarChart3 },
+      { key: 'galonaje-historial' as SectionKey, label: 'Historial Lecturas', icon: History },
       { key: 'cuadre' as SectionKey, label: 'Cuadre de Caja', icon: ClipboardList },
       { key: 'entrega' as SectionKey, label: 'Entrega de Turno', icon: BadgeCheck },
       { key: 'aprobacion' as SectionKey, label: 'Aprobación', icon: ShieldCheck },
@@ -176,7 +180,7 @@ export default function EstacionesPage() {
   const turnoEstadoBadge = turnoActivo ? ESTADO_BADGE[turnoActivo.estado] : null;
 
   const renderContent = () => {
-    const needsStation = !['estaciones', 'productos', 'dashboard'].includes(active) && !active.startsWith('dash-inventario') && active !== 'precios';
+    const needsStation = !['estaciones', 'productos', 'dashboard', 'galonaje-dashboard'].includes(active) && !active.startsWith('dash-inventario') && active !== 'precios';
     if (needsStation && !selectedEst) {
       return (
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 py-16 text-center">
@@ -204,7 +208,13 @@ export default function EstacionesPage() {
         ) : null;
 
       case 'cierre':
-        return selectedEst ? <EstCierreOperativo estacion={selectedEst} onRefresh={handleRefresh} /> : null;
+        return selectedEst ? <EstCierreOperativo estacion={selectedEst} islas={islas} surtidores={surtidores} mangueras={mangueras} productos={productos} onRefresh={handleRefresh} /> : null;
+
+      case 'galonaje-dashboard':
+        return <EstGalonajeDashboard estaciones={estaciones} selectedId={selectedId} />;
+
+      case 'galonaje-historial':
+        return selectedEst ? <EstGalonajeHistorial estacion={selectedEst} /> : null;
 
       case 'cuadre':
         if (!selectedEst) return null;

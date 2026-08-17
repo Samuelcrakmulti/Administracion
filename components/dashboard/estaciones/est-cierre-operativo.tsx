@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { Estacion } from './est-estaciones';
 import { EstCierreDetalle, type Cierre } from './est-cierre-detalle';
+import type { Isla, Surtidor, Manguera, Producto } from './est-cierre-lecturas';
 
 type Empleado = {
   id: string;
@@ -45,10 +46,14 @@ const estadoInfo = (val: string) => ESTADOS.find((e) => e.value === val) ?? ESTA
 
 interface Props {
   estacion: Estacion;
+  islas: Isla[];
+  surtidores: Surtidor[];
+  mangueras: Manguera[];
+  productos: Producto[];
   onRefresh: () => void;
 }
 
-export function EstCierreOperativo({ estacion, onRefresh }: Props) {
+export function EstCierreOperativo({ estacion, islas, surtidores, mangueras, productos, onRefresh }: Props) {
   const { user } = useAuth();
   const [cierres, setCierres] = useState<Cierre[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,6 +198,10 @@ export function EstCierreOperativo({ estacion, onRefresh }: Props) {
       <EstCierreDetalle
         cierre={selectedCierre}
         estacion={estacion}
+        islas={islas}
+        surtidores={surtidores}
+        mangueras={mangueras}
+        productos={productos}
         onBack={handleBackToList}
         onRefresh={fetchCierres}
       />

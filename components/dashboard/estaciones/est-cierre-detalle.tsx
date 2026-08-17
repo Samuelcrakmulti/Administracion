@@ -18,6 +18,8 @@ import { useAuth } from '@/components/auth-provider';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { Estacion } from './est-estaciones';
+import { EstCierreLecturas } from './est-cierre-lecturas';
+import type { Isla, Surtidor, Manguera, Producto } from './est-cierre-lecturas';
 
 export type Cierre = {
   id: string;
@@ -82,11 +84,15 @@ const SECCIONES: { key: SeccionKey; label: string; icon: typeof Building2; desc:
 interface Props {
   cierre: Cierre;
   estacion: Estacion;
+  islas: Isla[];
+  surtidores: Surtidor[];
+  mangueras: Manguera[];
+  productos: Producto[];
   onBack: () => void;
   onRefresh: () => void;
 }
 
-export function EstCierreDetalle({ cierre, estacion, onBack, onRefresh }: Props) {
+export function EstCierreDetalle({ cierre, estacion, islas, surtidores, mangueras, productos, onBack, onRefresh }: Props) {
   const { user } = useAuth();
   const [activeSeccion, setActiveSeccion] = useState<SeccionKey>('info');
   const [observaciones, setObservaciones] = useState(cierre.observaciones ?? '');
@@ -96,8 +102,17 @@ export function EstCierreDetalle({ cierre, estacion, onBack, onRefresh }: Props)
   const [audit, setAudit] = useState<CierreAuditoria[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [estadoActual, setEstadoActual] = useState(cierre.estado);
+  const [lecturasCompletas, setLecturasCompletas] = useState(0);
+  const [lecturasTotal, setLecturasTotal] = useState(0);
+  const [lecturasInconsistencias, setLecturasInconsistencias] = useState(0);
 
   const readOnly = isClosed(estadoActual);
+
+  const handleLecturasChange = useCallback((completas: number, total: number, inconsistencias: number) => {
+    setLecturasCompletas(completas);
+    setLecturasTotal(total);
+    setLecturasInconsistencias(inconsistencias);
+  }, []);
 
   const fetchAudit = useCallback(async () => {
     setLoadingAudit(true);
@@ -301,7 +316,12 @@ export function EstCierreDetalle({ cierre, estacion, onBack, onRefresh }: Props)
                 </Button>
               )}
               {!readOnly && estadoActual === 'en_proceso' && (
-                <Button onClick={() => cambiarEstado('pendiente_revision')} disabled={savingState} className="gap-2 bg-amber-600 hover:bg-amber-700">
+                <Button
+                  onClick={() => cambiarEstado('pendiente_revision')}
+                  disabled={savingState || (lecturasTotal > 0 && lecturasCompletas < lecturasTotal) || lecturasInconsistencias > 0}
+                  className="gap-2 bg-amber-600 hover:bg-amber-700"
+                  title={lecturasTotal > 0 && lecturasCompletas < lecturasTotal ? 'Faltan lecturas por completar' : lecturasInconsistencias > 0 ? 'Hay inconsistencias sin resolver' : 'Enviar a revisión'}
+                >
                   {savingState ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
                   Enviar a revisión
                 </Button>
@@ -335,11 +355,15 @@ export function EstCierreDetalle({ cierre, estacion, onBack, onRefresh }: Props)
         )}
 
         {activeSeccion === 'lecturas' && (
-          <PlaceholderSection
-            icon={Fuel}
-            title="Lecturas de Operación"
-            desc="Aquí se registrarán las lecturas iniciales y finales de cada manguera."
-            future="El cálculo de galonaje se generará automáticamente en la siguiente fase."
+          <EstCierreLecturas
+            cierre={cierre}
+            estacion={estacion}
+            islas={islas}
+            surtidores={surtidores}
+            mangueras={mangueras}
+            productos={productos}
+            readOnly={readOnly}
+            onLecturasChange={handleLecturasChange}
           />
         )}
 
