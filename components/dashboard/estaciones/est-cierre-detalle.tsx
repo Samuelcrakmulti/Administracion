@@ -5,7 +5,7 @@ import {
   ArrowLeft, Save, Loader2, Building2, Calendar, Clock, User, CreditCard,
   ClipboardCheck, Fuel, Ticket, Database, FileText,
   ShieldCheck, CheckCircle2, XCircle, AlertTriangle, Lock, History,
-  ChevronRight,
+  ChevronRight, Scale,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,9 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { Estacion } from './est-estaciones';
 import { EstCierreLecturas } from './est-cierre-lecturas';
+import { EstCierreVentas } from './est-cierre-ventas';
+import { EstCierrePagos } from './est-cierre-pagos';
+import { EstCierreCuadre } from './est-cierre-cuadre';
 import type { Isla, Surtidor, Manguera, Producto } from './est-cierre-lecturas';
 
 export type Cierre = {
@@ -68,7 +71,7 @@ const estadoInfo = (val: string) => ESTADOS.find((e) => e.value === val) ?? ESTA
 
 const isClosed = (estado: string) => estado === 'cerrado';
 
-type SeccionKey = 'info' | 'lecturas' | 'ventas' | 'pagos' | 'vales' | 'inventario' | 'observaciones' | 'revision';
+type SeccionKey = 'info' | 'lecturas' | 'ventas' | 'pagos' | 'vales' | 'cuadre' | 'observaciones' | 'revision';
 
 const SECCIONES: { key: SeccionKey; label: string; icon: typeof Building2; desc: string }[] = [
   { key: 'info', label: 'Información', icon: Building2, desc: 'Datos del turno' },
@@ -76,7 +79,7 @@ const SECCIONES: { key: SeccionKey; label: string; icon: typeof Building2; desc:
   { key: 'ventas', label: 'Ventas', icon: CreditCard, desc: 'Galones y venta total' },
   { key: 'pagos', label: 'Pagos', icon: CreditCard, desc: 'Medios de pago' },
   { key: 'vales', label: 'Vales', icon: Ticket, desc: 'Vales y ajustes' },
-  { key: 'inventario', label: 'Inventario', icon: Database, desc: 'Combustible y diferencias' },
+  { key: 'cuadre', label: 'Cuadre', icon: Scale, desc: 'Cuadre del turno' },
   { key: 'observaciones', label: 'Observaciones', icon: FileText, desc: 'Novedades del turno' },
   { key: 'revision', label: 'Revisión', icon: ShieldCheck, desc: 'Aprobación y auditoría' },
 ];
@@ -368,39 +371,19 @@ export function EstCierreDetalle({ cierre, estacion, islas, surtidores, manguera
         )}
 
         {activeSeccion === 'ventas' && (
-          <PlaceholderSection
-            icon={CreditCard}
-            title="Ventas"
-            desc="Galones vendidos, ventas por combustible y venta total del turno."
-            future="Estos valores se calcularán automáticamente a partir de las lecturas."
-          />
+          <EstCierreVentas cierre={cierre} estacion={estacion} islas={islas} surtidores={surtidores} mangueras={mangueras} productos={productos} />
         )}
 
         {activeSeccion === 'pagos' && (
-          <PlaceholderSection
-            icon={CreditCard}
-            title="Medios de Pago"
-            desc="Efectivo, tarjetas, transferencias y otros medios de pago."
-            future="El cuadre completo se implementará en la siguiente fase."
-          />
+          <EstCierrePagos cierre={cierre} estacion={estacion} readOnly={readOnly} />
         )}
 
         {activeSeccion === 'vales' && (
-          <PlaceholderSection
-            icon={Ticket}
-            title="Vales y Ajustes"
-            desc="Vales, ajustes y otros conceptos configurables."
-            future="Los conceptos serán configurables por estación, sin columnas rígidas."
-          />
+          <EstCierrePagos cierre={cierre} estacion={estacion} readOnly={readOnly} />
         )}
 
-        {activeSeccion === 'inventario' && (
-          <PlaceholderSection
-            icon={Database}
-            title="Inventario de Combustible"
-            desc="Inventario inicial, entradas, ventas, inventario final y diferencias."
-            future="La conciliación con tanques y carrotanques se integrará próximamente."
-          />
+        {activeSeccion === 'cuadre' && (
+          <EstCierreCuadre cierre={cierre} estacion={estacion} readOnly={readOnly} />
         )}
 
         {activeSeccion === 'observaciones' && (

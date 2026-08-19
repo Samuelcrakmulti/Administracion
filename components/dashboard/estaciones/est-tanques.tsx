@@ -21,6 +21,9 @@ export type Tanque = {
   nombre: string;
   codigo: string | null;
   capacidad_maxima_galones: number;
+  capacidad_operativa_galones: number;
+  nivel_alerta_galones: number;
+  nivel_critico_galones: number;
   nivel_actual_galones: number;
   estado: string;
   descripcion: string | null;
@@ -30,6 +33,9 @@ const EMPTY = {
   nombre: '',
   codigo: '',
   capacidad_maxima_galones: 0,
+  capacidad_operativa_galones: 0,
+  nivel_alerta_galones: 0,
+  nivel_critico_galones: 0,
   nivel_actual_galones: 0,
   producto_id: '',
   estado: 'activo',
@@ -74,6 +80,9 @@ export function EstTanques({ estacionId, estacionNombre, productos, onRefresh }:
       nombre: t.nombre,
       codigo: t.codigo ?? '',
       capacidad_maxima_galones: t.capacidad_maxima_galones,
+      capacidad_operativa_galones: t.capacidad_operativa_galones ?? 0,
+      nivel_alerta_galones: t.nivel_alerta_galones ?? 0,
+      nivel_critico_galones: t.nivel_critico_galones ?? 0,
       nivel_actual_galones: t.nivel_actual_galones,
       producto_id: t.producto_id ?? '',
       estado: t.estado,
@@ -93,6 +102,9 @@ export function EstTanques({ estacionId, estacionNombre, productos, onRefresh }:
         nombre: form.nombre,
         codigo: form.codigo || null,
         capacidad_maxima_galones: form.capacidad_maxima_galones,
+        capacidad_operativa_galones: form.capacidad_operativa_galones,
+        nivel_alerta_galones: form.nivel_alerta_galones,
+        nivel_critico_galones: form.nivel_critico_galones,
         nivel_actual_galones: form.nivel_actual_galones,
         estado: form.estado,
         descripcion: form.descripcion || null,
