@@ -139,6 +139,13 @@ export function EstTanques({ estacionId, estacionNombre, productos, onRefresh }:
   const pctNivel = (t: Tanque) => t.capacidad_maxima_galones > 0 ? (t.nivel_actual_galones / t.capacidad_maxima_galones) * 100 : 0;
   const colorNivel = (pct: number) => pct < 10 ? 'bg-red-500' : pct < 20 ? 'bg-orange-500' : pct < 30 ? 'bg-amber-500' : 'bg-emerald-500';
 
+  const tankStatus = (t: Tanque): { label: string; color: string; bg: string } => {
+    const nivel = t.nivel_actual_galones;
+    if (t.nivel_critico_galones > 0 && nivel <= t.nivel_critico_galones) return { label: 'CRITICO', color: 'text-red-700', bg: 'bg-red-50' };
+    if (t.nivel_alerta_galones > 0 && nivel <= t.nivel_alerta_galones) return { label: 'NIVEL BAJO', color: 'text-orange-700', bg: 'bg-orange-50' };
+    return { label: 'NORMAL', color: 'text-emerald-700', bg: 'bg-emerald-50' };
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -177,9 +184,14 @@ export function EstTanques({ estacionId, estacionNombre, productos, onRefresh }:
                         <p className="text-xs text-slate-400">{t.codigo || 'Sin código'}</p>
                       </div>
                     </div>
-                    <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold', t.estado === 'activo' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}>
-                      {t.estado === 'activo' ? 'Activo' : 'Inactivo'}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold', t.estado === 'activo' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}>
+                        {t.estado === 'activo' ? 'Activo' : 'Inactivo'}
+                      </span>
+                      {(() => { const st = tankStatus(t); return (
+                        <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold', st.bg, st.color)}>{st.label}</span>
+                      ); })()}
+                    </div>
                   </div>
 
                   <div className="mt-4">
@@ -242,11 +254,23 @@ export function EstTanques({ estacionId, estacionNombre, productos, onRefresh }:
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-600">Capacidad máxima (galones) *</Label>
+              <Label className="text-xs font-semibold text-slate-600">Capacidad máxima (gal) *</Label>
               <Input type="number" min={0} step={1} value={form.capacidad_maxima_galones} onChange={(e) => set('capacidad_maxima_galones', parseFloat(e.target.value) || 0)} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-slate-600">Nivel actual (galones)</Label>
+              <Label className="text-xs font-semibold text-slate-600">Capacidad operativa (gal)</Label>
+              <Input type="number" min={0} step={1} value={form.capacidad_operativa_galones} onChange={(e) => set('capacidad_operativa_galones', parseFloat(e.target.value) || 0)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-orange-600">Nivel de alerta (gal)</Label>
+              <Input type="number" min={0} step={1} value={form.nivel_alerta_galones} onChange={(e) => set('nivel_alerta_galones', parseFloat(e.target.value) || 0)} placeholder="Ej: 2000" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-red-600">Nivel crítico (gal)</Label>
+              <Input type="number" min={0} step={1} value={form.nivel_critico_galones} onChange={(e) => set('nivel_critico_galones', parseFloat(e.target.value) || 0)} placeholder="Ej: 1000" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-600">Nivel actual (gal)</Label>
               <Input type="number" min={0} step={0.01} value={form.nivel_actual_galones} onChange={(e) => set('nivel_actual_galones', parseFloat(e.target.value) || 0)} />
             </div>
             <div className="space-y-1.5">

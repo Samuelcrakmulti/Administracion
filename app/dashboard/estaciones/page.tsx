@@ -6,7 +6,7 @@ import {
   Package, Map, Settings2, ChevronRight, Loader2,
   MapPin, CheckCircle2, AlertTriangle, RefreshCw, Activity,
   History, ClipboardList, BadgeCheck, ShieldCheck,
-  Database, Truck, Tag, BarChart3, BellRing, ClipboardCheck,
+  Database, Truck, Tag, BarChart3, BellRing, ClipboardCheck, Scale,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,11 +32,12 @@ import { EstHistorialInventario } from '@/components/dashboard/estaciones/est-hi
 import { EstPreciosCombustible } from '@/components/dashboard/estaciones/est-precios-combustible';
 import { EstDashboardInventario } from '@/components/dashboard/estaciones/est-dashboard-inventario';
 import { EstAlertasInventario } from '@/components/dashboard/estaciones/est-alertas-inventario';
+import { EstInventarioConciliacion } from '@/components/dashboard/estaciones/est-inventario-conciliacion';
 import { EstCierreOperativo } from '@/components/dashboard/estaciones/est-cierre-operativo';
 import { EstGalonajeDashboard } from '@/components/dashboard/estaciones/est-galonaje-dashboard';
 import { EstGalonajeHistorial } from '@/components/dashboard/estaciones/est-galonaje-historial';
 
-type SectionKey = 'dashboard' | 'operacion' | 'cierre' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config' | 'tanques' | 'inv-inicial' | 'inv-final' | 'carrotanques' | 'hist-inventario' | 'precios' | 'dash-inventario' | 'alertas-inventario' | 'galonaje-dashboard' | 'galonaje-historial';
+type SectionKey = 'dashboard' | 'operacion' | 'cierre' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config' | 'tanques' | 'inv-inicial' | 'inv-final' | 'conciliacion' | 'carrotanques' | 'hist-inventario' | 'precios' | 'dash-inventario' | 'alertas-inventario' | 'galonaje-dashboard' | 'galonaje-historial';
 
 const NAV_GROUPS = [
   {
@@ -59,6 +60,7 @@ const NAV_GROUPS = [
       { key: 'tanques' as SectionKey, label: 'Tanques', icon: Database },
       { key: 'inv-inicial' as SectionKey, label: 'Inventario Inicial', icon: ClipboardList },
       { key: 'inv-final' as SectionKey, label: 'Inventario Final', icon: ClipboardCheck },
+      { key: 'conciliacion' as SectionKey, label: 'Conciliación', icon: Scale },
       { key: 'carrotanques' as SectionKey, label: 'Carrotanques', icon: Truck },
       { key: 'hist-inventario' as SectionKey, label: 'Historial Inventario', icon: History },
       { key: 'precios' as SectionKey, label: 'Precios', icon: Tag },
@@ -296,6 +298,8 @@ export default function EstacionesPage() {
         return selectedEst ? <EstInventarioDiario estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} tanques={tanques} productos={productos} tipo="inicial" onRefresh={handleRefresh} /> : null;
       case 'inv-final':
         return selectedEst ? <EstInventarioDiario estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} tanques={tanques} productos={productos} tipo="final" onRefresh={handleRefresh} /> : null;
+      case 'conciliacion':
+        return selectedEst ? <EstInventarioConciliacion estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} tanques={tanques} productos={productos} onRefresh={handleRefresh} /> : null;
       case 'carrotanques':
         return selectedEst ? <EstCarrotanques estacionId={selectedEst.id} estacionNombre={selectedEst.nombre} tanques={tanques} productos={productos} onRefresh={handleRefresh} /> : null;
       case 'hist-inventario':

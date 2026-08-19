@@ -2,98 +2,25 @@
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
-  Brain,
-  Activity,
-  AlertTriangle,
-  Lightbulb,
-  MessageSquare,
-  Send,
-  User,
-  Sparkles,
-  Wallet,
-  TrendingUp,
-  TrendingDown,
-  Package,
-  PackageX,
-  ArrowUpRight,
-  ArrowDownRight,
-  Loader2,
-  Bot,
-  CheckCircle2,
-  Boxes,
-  Target,
-  PiggyBank,
-  Megaphone,
-  Tag,
+  Brain, Activity, AlertTriangle, Lightbulb, MessageSquare, Send, User,
+  Sparkles, Loader2, Bot, CheckCircle2, Building2, Fuel, Droplet,
+  TrendingUp, TrendingDown, ShieldAlert, Car, Truck, Users, Calendar,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
 import { callGemini } from '@/lib/gemini';
 import { useAuth } from '@/components/auth-provider';
 import { cn } from '@/lib/utils';
+import {
+  getPeriod, fetchKpis, fetchAlertas, fetchProductSales,
+  type PeriodKey, type KpiData, type AlertaItem, type ProductSales,
+} from '@/lib/centro-control';
 
-type Venta = {
-  id: string;
-  cliente: string;
-  total: number;
-  metodo_pago: string;
-  estado: string;
-  fecha: string;
-  created_at: string;
-};
-
-type Finanza = {
-  id: string;
-  tipo: string;
-  categoria: string;
-  descripcion: string;
-  valor: number;
-  fecha: string;
-};
-
-type Producto = {
-  id: string;
-  nombre: string;
-  codigo: string;
-  categoria: string;
-  precio_compra: number;
-  precio_venta: number;
-  cantidad: number;
-  stock_minimo: number;
-  created_at: string;
-};
-
-type Detalle = {
-  id: string;
-  venta_id: string;
-  producto_id: string;
-  cantidad: number;
-  precio_unitario: number;
-  subtotal: number;
-};
-
-type Message = {
-  role: 'user' | 'ai' | 'error';
-  content: string;
-};
-
+type Estacion = { id: string; nombre: string };
+type Message = { role: 'user' | 'ai' | 'error'; content: string };
 type TabKey = 'diagnostico' | 'alertas' | 'recomendaciones' | 'chat';
-
-type DiagnosticoData = {
-  hayDatos: boolean;
-  saludFinanciera: number;
-  estadoVentas: number;
-  estadoInventario: number;
-  crecimiento: number;
-  puntajeGeneral: number;
-  ingresosMes: number;
-  gastosMes: number;
-  utilidadMes: number;
-  totalProductos: number;
-  agotados: number;
-  stockBajo: number;
-};
 
 const tabs: { key: TabKey; label: string; icon: typeof Activity }[] = [
   { key: 'diagnostico', label: 'Diagnóstico', icon: Activity },
@@ -102,150 +29,160 @@ const tabs: { key: TabKey; label: string; icon: typeof Activity }[] = [
   { key: 'chat', label: 'Consultar IA', icon: MessageSquare },
 ];
 
+function fmtCOP(n: number): string {
+  return n.toLocaleString('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+function fmtGal(n: number): string {
+  return n.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' gal';
+}
+
 export default function CentroInteligentePage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabKey>('diagnostico');
   const [loading, setLoading] = useState(true);
-  const [ventas, setVentas] = useState<Venta[]>([]);
-  const [finanzas, setFinanzas] = useState<Finanza[]>([]);
-  const [productos, setProductos] = useState<Producto[]>([]);
-  const [detalles, setDetalles] = useState<Detalle[]>([]);
+  const [estaciones, setEstaciones] = useState<Estacion[]>([]);
+  const [selectedEstacion, setSelectedEstacion] = useState<string>('all');
+  const [periodKey] = useState<PeriodKey>('este_mes');
+  const [kpis, setKpis] = useState<KpiData | null>(null);
+  const [alertas, setAlertas] = useState<AlertaItem[]>([]);
+  const [productSales, setProductSales] = useState<ProductSales[]>([]);
+
+  const period = useMemo(() => getPeriod(periodKey), [periodKey]);
+  const estacionId = selectedEstacion === 'all' ? null : selectedEstacion;
+  const estacionNombre = selectedEstacion === 'all'
+    ? 'Toda la empresa'
+    : estaciones.find((e) => e.id === selectedEstacion)?.nombre ?? 'Estación';
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const [v, f, p, d] = await Promise.all([
-      supabase.from('ventas').select('*').order('created_at', { ascending: false }),
-      supabase.from('finanzas').select('*').order('fecha', { ascending: false }),
-      supabase.from('inventario').select('*').order('created_at', { ascending: false }),
-      supabase.from('detalle_venta').select('*'),
-    ]);
-    setVentas((v.data as Venta[]) || []);
-    setFinanzas((f.data as Finanza[]) || []);
-    setProductos((p.data as Producto[]) || []);
-    setDetalles((d.data as Detalle[]) || []);
-    setLoading(false);
-  }, []);
+    try {
+      const [k, a, p] = await Promise.all([
+        fetchKpis(estacionId, period),
+        fetchAlertas(estacionId),
+        fetchProductSales(estacionId, period),
+      ]);
+      setKpis(k);
+      setAlertas(a);
+      setProductSales(p);
+    } catch (err) {
+      console.error('[CentroInteligente] Error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [estacionId, period]);
 
   useEffect(() => {
-    if (user) fetchData();
+    async function loadEstaciones() {
+      const { data } = await supabase.from('estaciones').select('id, nombre').order('created_at');
+      setEstaciones((data as Estacion[]) ?? []);
+    }
+    if (user) loadEstaciones();
+  }, [user]);
+
+  useEffect(() => {
+    if (user && period.start) fetchData();
   }, [user, fetchData]);
 
   // ===== DIAGNÓSTICO =====
-  const diagnostico = useMemo<DiagnosticoData>(() => {
-    const now = new Date();
-    const ventasMes = ventas.filter((v) => {
-      const d = new Date(v.fecha + 'T00:00:00');
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    });
-    const ingresosMes = ventasMes.reduce((s, v) => s + Number(v.total), 0);
-    const gastosMes = finanzas
-      .filter((f) => f.tipo === 'Gasto' && new Date(f.fecha + 'T00:00:00').getMonth() === now.getMonth())
-      .reduce((s, f) => s + Number(f.valor), 0);
-    const utilidadMes = ingresosMes - gastosMes;
+  const diagnostico = useMemo(() => {
+    if (!kpis) return null;
+    const cuadrePct = (kpis.cuadresCorrectos + kpis.cuadresConDiferencia) > 0
+      ? Math.round((kpis.cuadresCorrectos / (kpis.cuadresCorrectos + kpis.cuadresConDiferencia)) * 100)
+      : null;
+
+    const ventasChange = kpis.prevVentas > 0 ? ((kpis.ventas - kpis.prevVentas) / kpis.prevVentas) * 100 : null;
 
     let saludFinanciera = 50;
-    if (ingresosMes > 0 || gastosMes > 0) {
-      if (ingresosMes > 0 && gastosMes === 0) saludFinanciera = 100;
-      else if (ingresosMes > gastosMes) {
-        saludFinanciera = Math.min(100, Math.round(50 + (utilidadMes / ingresosMes) * 50));
+    if (kpis.ingresos > 0 || kpis.gastos > 0) {
+      if (kpis.ingresos > 0 && kpis.gastos === 0) saludFinanciera = 100;
+      else if (kpis.ingresos > kpis.gastos) {
+        saludFinanciera = Math.min(100, Math.round(50 + (kpis.utilidad / kpis.ingresos) * 50));
       } else {
-        const deficit = gastosMes > 0 ? (ingresosMes - gastosMes) / gastosMes : -1;
+        const deficit = kpis.gastos > 0 ? (kpis.ingresos - kpis.gastos) / kpis.gastos : -1;
         saludFinanciera = Math.max(0, Math.round(50 + deficit * 50));
       }
     }
 
-    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const ventasMesPrevValor = ventas
-      .filter((v) => { const d = new Date(v.fecha + 'T00:00:00'); return d.getMonth() === prevMonth.getMonth() && d.getFullYear() === prevMonth.getFullYear(); })
-      .reduce((s, v) => s + Number(v.total), 0);
+    const estadoVentas = ventasChange !== null
+      ? Math.max(0, Math.min(100, Math.round(50 + ventasChange * 0.5)))
+      : kpis.ventas > 0 ? 70 : 50;
 
-    let estadoVentas = 50;
-    if (ventasMesPrevValor > 0) {
-      estadoVentas = Math.max(0, Math.min(100, Math.round(50 + ((ingresosMes - ventasMesPrevValor) / ventasMesPrevValor) * 50)));
-    } else if (ingresosMes > 0) {
-      estadoVentas = 70;
-    }
+    const totalTanques = kpis.tanquesNormales + kpis.tanquesBajos + kpis.tanquesCriticos;
+    const estadoInventario = totalTanques > 0
+      ? Math.round((kpis.tanquesNormales / totalTanques) * 100)
+      : kpis.inventarioGalones > 0 ? 70 : 50;
 
-    const totalProductos = productos.length;
-    const agotados = productos.filter((p) => p.cantidad <= 0).length;
-    const stockBajo = productos.filter((p) => p.cantidad > 0 && p.cantidad <= p.stock_minimo).length;
-    const estadoInventario = totalProductos > 0 ? Math.round(((totalProductos - agotados - stockBajo) / totalProductos) * 100) : 0;
-    const crecimiento = ventasMesPrevValor > 0 ? ((ingresosMes - ventasMesPrevValor) / ventasMesPrevValor) * 100 : 0;
     const puntajeGeneral = Math.round((saludFinanciera + estadoVentas + estadoInventario) / 3);
 
     return {
-      saludFinanciera, estadoVentas, estadoInventario, crecimiento, puntajeGeneral,
-      ingresosMes, gastosMes, utilidadMes, totalProductos, agotados, stockBajo,
-      hayDatos: ventas.length > 0 || finanzas.length > 0 || productos.length > 0,
+      hayDatos: kpis.galones > 0 || kpis.ventas > 0 || kpis.inventarioGalones > 0 || totalTanques > 0,
+      saludFinanciera, estadoVentas, estadoInventario, puntajeGeneral,
+      ventas: kpis.ventas, galones: kpis.galones, ingresos: kpis.ingresos, gastos: kpis.gastos,
+      utilidad: kpis.utilidad, ventasChange,
+      cuadrePct, cuadresCorrectos: kpis.cuadresCorrectos, cuadresConDiferencia: kpis.cuadresConDiferencia,
+      faltantesTotal: kpis.faltantesTotal, sobrantesTotal: kpis.sobrantesTotal,
+      inventarioGalones: kpis.inventarioGalones,
+      tanquesNormales: kpis.tanquesNormales, tanquesBajos: kpis.tanquesBajos, tanquesCriticos: kpis.tanquesCriticos,
+      carrotanquesGalones: kpis.carrotanquesGalones, carrotanquesCount: kpis.carrotanquesCount,
+      empleadosActivos: kpis.empleadosActivos,
+      parqueaderoIngresos: kpis.parqueaderoIngresos, parqueaderoVehiculos: kpis.parqueaderoVehiculos,
     };
-  }, [ventas, finanzas, productos]);
-
-  // ===== ALERTAS =====
-  const alertas = useMemo(() => {
-    const items: { tipo: string; titulo: string; descripcion: string; icon: typeof AlertTriangle; color: string; bgColor: string }[] = [];
-    const now = new Date();
-
-    productos.filter((p) => p.cantidad <= 0).forEach((p) => {
-      items.push({ tipo: 'agotado', titulo: p.nombre, descripcion: 'Producto completamente agotado. Requiere reposición urgente.', icon: PackageX, color: 'text-red-600', bgColor: 'bg-red-50' });
-    });
-    productos.filter((p) => p.cantidad > 0 && p.cantidad <= p.stock_minimo).forEach((p) => {
-      items.push({ tipo: 'stock_bajo', titulo: p.nombre, descripcion: `Stock actual: ${p.cantidad} · Stock mínimo: ${p.stock_minimo}. Realiza un nuevo pedido pronto.`, icon: AlertTriangle, color: 'text-amber-600', bgColor: 'bg-amber-50' });
-    });
-
-    const gastosMes = finanzas.filter((f) => f.tipo === 'Gasto' && new Date(f.fecha + 'T00:00:00').getMonth() === now.getMonth()).reduce((s, f) => s + Number(f.valor), 0);
-    const ingresosMes = ventas.filter((v) => new Date(v.fecha + 'T00:00:00').getMonth() === now.getMonth()).reduce((s, v) => s + Number(v.total), 0);
-
-    if (gastosMes > ingresosMes && gastosMes > 0) {
-      items.push({ tipo: 'gastos_altos', titulo: 'Gastos superiores a ingresos', descripcion: `Tus gastos del mes (${formatCurrency(gastosMes)}) superan tus ingresos (${formatCurrency(ingresosMes)}). Reduce gastos urgentemente.`, icon: Wallet, color: 'text-red-600', bgColor: 'bg-red-50' });
-    }
-
-    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const ventasMesPrev = ventas.filter((v) => { const d = new Date(v.fecha + 'T00:00:00'); return d.getMonth() === prevMonth.getMonth() && d.getFullYear() === prevMonth.getFullYear(); }).reduce((s, v) => s + Number(v.total), 0);
-    if (ventasMesPrev > 0 && ingresosMes < ventasMesPrev * 0.7) {
-      const caida = ((ventasMesPrev - ingresosMes) / ventasMesPrev) * 100;
-      items.push({ tipo: 'ventas_bajan', titulo: 'Disminución de ventas', descripcion: `Las ventas cayeron ${caida.toFixed(0)}% respecto al mes anterior. Revisa tu estrategia comercial.`, icon: TrendingDown, color: 'text-orange-600', bgColor: 'bg-orange-50' });
-    }
-    return items;
-  }, [ventas, finanzas, productos]);
+  }, [kpis]);
 
   // ===== RECOMENDACIONES =====
   const recomendaciones = useMemo(() => {
-    const recs: { titulo: string; descripcion: string; icon: typeof Lightbulb; color: string; bgColor: string }[] = [];
-    const now = new Date();
-    if (ventas.length === 0 && productos.length === 0 && finanzas.length === 0) return recs;
+    if (!kpis) return [];
+    const recs: { titulo: string; desc: string; icon: typeof Lightbulb; color: string; bg: string }[] = [];
 
-    const stockBajoList = productos.filter((p) => p.cantidad > 0 && p.cantidad <= p.stock_minimo);
-    if (stockBajoList.length > 0) recs.push({ titulo: 'Comprar inventario', descripcion: `Tienes ${stockBajoList.length} producto(s) con stock bajo. Realiza pedidos de reposición para los de mayor rotación.`, icon: Boxes, color: 'text-blue-600', bgColor: 'bg-blue-50' });
-
-    const gastosMes = finanzas.filter((f) => f.tipo === 'Gasto' && new Date(f.fecha + 'T00:00:00').getMonth() === now.getMonth()).reduce((s, f) => s + Number(f.valor), 0);
-    const ingresosMes = ventas.filter((v) => new Date(v.fecha + 'T00:00:00').getMonth() === now.getMonth()).reduce((s, v) => s + Number(v.total), 0);
-    if (gastosMes > ingresosMes && gastosMes > 0) recs.push({ titulo: 'Reducir gastos', descripcion: 'Tus gastos superan tus ingresos. Identifica y elimina gastos no esenciales para mejorar tu rentabilidad.', icon: PiggyBank, color: 'text-emerald-600', bgColor: 'bg-emerald-50' });
-
-    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const ventasMesPrev = ventas.filter((v) => { const d = new Date(v.fecha + 'T00:00:00'); return d.getMonth() === prevMonth.getMonth() && d.getFullYear() === prevMonth.getFullYear(); }).reduce((s, v) => s + Number(v.total), 0);
-    if (ventasMesPrev > 0 && ingresosMes < ventasMesPrev) recs.push({ titulo: 'Aumentar publicidad', descripcion: 'Tus ventas han disminuido respecto al mes anterior. Considera invertir en publicidad o promociones para reactivar las ventas.', icon: Megaphone, color: 'text-violet-600', bgColor: 'bg-violet-50' });
-
-    const margenBajo = productos.filter((p) => Number(p.precio_compra) > 0 && Number(p.precio_venta) > 0 && (Number(p.precio_venta) - Number(p.precio_compra)) / Number(p.precio_compra) < 0.2);
-    if (margenBajo.length > 0) recs.push({ titulo: 'Cambiar precios', descripcion: `Tienes ${margenBajo.length} producto(s) con margen inferior al 20%. Ajusta los precios para mejorar la rentabilidad.`, icon: Tag, color: 'text-amber-600', bgColor: 'bg-amber-50' });
-
-    const agotadosList = productos.filter((p) => p.cantidad <= 0);
-    if (agotadosList.length > 0) recs.push({ titulo: 'Incrementar stock', descripcion: `${agotadosList.length} producto(s) agotado(s). Reponer el inventario te permitirá recuperar ventas perdidas.`, icon: Package, color: 'text-rose-600', bgColor: 'bg-rose-50' });
-
-    const sinRotacion = productos.filter((p) => !detalles.some((d) => d.producto_id === p.id));
-    if (sinRotacion.length > 0) recs.push({ titulo: 'Crear promociones', descripcion: `${sinRotacion.length} producto(s) sin ventas registradas. Crea promociones o descuentos para aumentar su rotación.`, icon: Target, color: 'text-teal-600', bgColor: 'bg-teal-50' });
-
+    if (kpis.tanquesCriticos > 0) {
+      recs.push({ titulo: 'Abastecimiento urgente', desc: `${kpis.tanquesCriticos} tanque(s) en nivel crítico. Programar carrotanque inmediatamente.`, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50' });
+    }
+    if (kpis.tanquesBajos > 0) {
+      recs.push({ titulo: 'Programar abastecimiento', desc: `${kpis.tanquesBajos} tanque(s) con nivel bajo. Considerar programar pedido de combustible.`, icon: Fuel, color: 'text-orange-600', bg: 'bg-orange-50' });
+    }
+    if (kpis.cuadresConDiferencia > 0) {
+      recs.push({ titulo: 'Revisar cuadres', desc: `${kpis.cuadresConDiferencia} turno(s) con diferencias. Faltantes: ${fmtCOP(kpis.faltantesTotal)}.`, icon: ShieldAlert, color: 'text-amber-600', bg: 'bg-amber-50' });
+    }
+    const ventasChange = kpis.prevVentas > 0 ? ((kpis.ventas - kpis.prevVentas) / kpis.prevVentas) * 100 : null;
+    if (ventasChange !== null && ventasChange < -10) {
+      recs.push({ titulo: 'Caída de ventas', desc: `Las ventas disminuyeron ${Math.abs(ventasChange).toFixed(1)}% frente al periodo anterior.`, icon: TrendingDown, color: 'text-orange-600', bg: 'bg-orange-50' });
+    }
+    if (kpis.gastos > kpis.ingresos && kpis.ingresos > 0) {
+      recs.push({ titulo: 'Gastos superiores a ingresos', desc: `Gastos: ${fmtCOP(kpis.gastos)} vs Ingresos: ${fmtCOP(kpis.ingresos)}.`, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50' });
+    }
+    if (productSales.length > 0 && kpis.galones > 0) {
+      const top = productSales[0];
+      const pct = (top.galones / kpis.galones) * 100;
+      if (pct > 50) {
+        recs.push({ titulo: `Alta concentración en ${top.nombre}`, desc: `${top.nombre} representa el ${pct.toFixed(0)}% del galonaje. Considerar diversificar o asegurar abastecimiento.`, icon: Droplet, color: 'text-blue-600', bg: 'bg-blue-50' });
+      }
+    }
+    if (recs.length === 0 && kpis.galones > 0) {
+      recs.push({ titulo: 'Operación normal', desc: 'No se detectan problemas críticos en el periodo actual.', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' });
+    }
     return recs;
-  }, [ventas, finanzas, productos, detalles]);
+  }, [kpis, productSales]);
 
   return (
     <div className="px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8 flex items-center gap-3">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-blue-700 text-white shadow-soft">
           <Brain className="h-5 w-5" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Centro Inteligente</h1>
-          <p className="text-sm text-slate-500">Tu consultor empresarial impulsado por inteligencia artificial</p>
+          <p className="text-sm text-slate-500">Tu consultor empresarial impulsado por IA con datos reales</p>
+        </div>
+        {/* Station selector */}
+        <div className="flex items-center gap-2">
+          <Building2 className="h-4 w-4 text-slate-400" />
+          <Select value={selectedEstacion} onValueChange={setSelectedEstacion}>
+            <SelectTrigger className="w-44 border-slate-200"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toda la empresa</SelectItem>
+              {estaciones.map((e) => <SelectItem key={e.id} value={e.id}>{e.nombre}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -273,10 +210,10 @@ export default function CentroInteligentePage() {
         </div>
       ) : (
         <>
-          {activeTab === 'diagnostico' && <DiagnosticoSection data={diagnostico} />}
+          {activeTab === 'diagnostico' && diagnostico && <DiagnosticoSection data={diagnostico} estacionNombre={estacionNombre} productSales={productSales} />}
           {activeTab === 'alertas' && <AlertasSection alertas={alertas} />}
           {activeTab === 'recomendaciones' && <RecomendacionesSection recomendaciones={recomendaciones} />}
-          {activeTab === 'chat' && <ChatSection ventas={ventas} finanzas={finanzas} productos={productos} detalles={detalles} />}
+          {activeTab === 'chat' && <ChatSection kpis={kpis} alertas={alertas} productSales={productSales} estacionNombre={estacionNombre} period={period} />}
         </>
       )}
     </div>
@@ -284,15 +221,22 @@ export default function CentroInteligentePage() {
 }
 
 // ===== DIAGNÓSTICO =====
-function DiagnosticoSection({ data }: { data: DiagnosticoData }) {
+function DiagnosticoSection({ data, estacionNombre, productSales }: {
+  data: NonNullable<ReturnType<typeof useDiagnostico>>;
+  estacionNombre: string;
+  productSales: ProductSales[];
+}) {
   if (!data.hayDatos) {
     return (
       <Card className="flex flex-col items-center justify-center py-16 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
           <Activity className="h-8 w-8 text-slate-400" />
         </div>
-        <h3 className="mt-4 text-base font-semibold text-slate-700">Aún no hay suficientes datos</h3>
-        <p className="mt-1 max-w-md text-sm text-slate-500">El sistema necesita más información para generar un diagnóstico. Registra ventas, gastos y productos para obtener un análisis completo.</p>
+        <h3 className="mt-4 text-base font-semibold text-slate-700">No hay datos suficientes</h3>
+        <p className="mt-1 max-w-md text-sm text-slate-500">
+          El sistema necesita más información para generar un diagnóstico de {estacionNombre}.
+          Registra lecturas, cuadres y ventas en el módulo de Estaciones para obtener un análisis completo.
+        </p>
       </Card>
     );
   }
@@ -320,37 +264,74 @@ function DiagnosticoSection({ data }: { data: DiagnosticoData }) {
             </div>
           </div>
           <div className="flex-1">
-            <h2 className="text-lg font-bold text-slate-900">Estado General de la Empresa</h2>
+            <h2 className="text-lg font-bold text-slate-900">Estado de {estacionNombre}</h2>
             <p className="mt-1 text-sm text-slate-500">
-              {data.puntajeGeneral >= 70 ? 'Tu empresa se encuentra en un estado saludable. Sigue manteniendo buenas prácticas.'
-                : data.puntajeGeneral >= 40 ? 'Tu empresa presenta algunas áreas de mejora. Revisa las recomendaciones para optimizar.'
-                : 'Tu empresa requiere atención inmediata. Revisa las alertas y recomendaciones.'}
+              {data.puntajeGeneral >= 70 ? 'La operación se encuentra en un estado saludable.'
+                : data.puntajeGeneral >= 40 ? 'Se detectan áreas de mejora. Revisa las recomendaciones.'
+                : 'Requiere atención inmediata. Revisa las alertas y recomendaciones.'}
             </p>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[
-                { label: 'Ingresos mes', value: formatCurrency(data.ingresosMes), color: '' },
-                { label: 'Gastos mes', value: formatCurrency(data.gastosMes), color: '' },
-                { label: 'Utilidad', value: formatCurrency(data.utilidadMes), color: data.utilidadMes >= 0 ? 'text-emerald-600' : 'text-red-600' },
-                { label: 'Crecimiento', value: `${data.crecimiento >= 0 ? '+' : ''}${data.crecimiento.toFixed(0)}%`, color: data.crecimiento >= 0 ? 'text-emerald-600' : 'text-red-600' },
-              ].map((s) => (
-                <div key={s.label} className="rounded-xl bg-slate-50 p-3 text-center">
-                  <p className="text-xs text-slate-500">{s.label}</p>
-                  <p className={cn('mt-1 text-sm font-bold', s.color || 'text-slate-900')}>{s.value}</p>
-                </div>
-              ))}
+              <div className="rounded-xl bg-slate-50 p-3 text-center">
+                <p className="text-xs text-slate-500">Ventas</p>
+                <p className="mt-1 text-sm font-bold text-slate-900">{fmtCOP(data.ventas)}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 text-center">
+                <p className="text-xs text-slate-500">Galones</p>
+                <p className="mt-1 text-sm font-bold text-slate-900">{data.galones.toLocaleString('es-CO')}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 text-center">
+                <p className="text-xs text-slate-500">Utilidad</p>
+                <p className={cn('mt-1 text-sm font-bold', data.utilidad >= 0 ? 'text-emerald-600' : 'text-red-600')}>{fmtCOP(data.utilidad)}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 text-center">
+                <p className="text-xs text-slate-500">Inventario</p>
+                <p className="mt-1 text-sm font-bold text-slate-900">{data.inventarioGalones.toLocaleString('es-CO')} gal</p>
+              </div>
             </div>
           </div>
         </div>
       </Card>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <HealthBar label="Salud Financiera" value={data.saludFinanciera} icon={<Wallet className="h-5 w-5" />} color="emerald" />
-        <HealthBar label="Estado de Ventas" value={data.estadoVentas} icon={<TrendingUp className="h-5 w-5" />} color="blue" />
-        <HealthBar label="Estado del Inventario" value={data.estadoInventario} icon={<Package className="h-5 w-5" />} color="amber" />
+        <HealthBar label="Salud Financiera" value={data.saludFinanciera} icon={<TrendingUp className="h-5 w-5" />} color="emerald" />
+        <HealthBar label="Estado de Ventas" value={data.estadoVentas} icon={<Activity className="h-5 w-5" />} color="blue" />
+        <HealthBar label="Estado de Inventario" value={data.estadoInventario} icon={<Fuel className="h-5 w-5" />} color="amber" />
       </div>
+
+      {/* Detailed stats */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Cuadres correctos" value={data.cuadrePct !== null ? `${data.cuadrePct}%` : 'Sin datos'} icon={<CheckCircle2 className="h-4 w-4" />} color={data.cuadrePct !== null && data.cuadrePct >= 90 ? 'emerald' : 'amber'} />
+        <StatCard label="Faltantes total" value={fmtCOP(data.faltantesTotal)} icon={<TrendingDown className="h-4 w-4" />} color="red" />
+        <StatCard label="Tanques en alerta" value={String(data.tanquesBajos + data.tanquesCriticos)} icon={<AlertTriangle className="h-4 w-4" />} color={data.tanquesCriticos > 0 ? 'red' : data.tanquesBajos > 0 ? 'amber' : 'emerald'} />
+        <StatCard label="Carrotanques" value={`${data.carrotanquesCount} (${data.carrotanquesGalones.toLocaleString('es-CO')} gal)`} icon={<Truck className="h-4 w-4" />} color="blue" />
+        <StatCard label="Empleados activos" value={String(data.empleadosActivos)} icon={<Users className="h-4 w-4" />} color="violet" />
+        <StatCard label="Parqueadero" value={`${data.parqueaderoVehiculos} vehículos`} icon={<Car className="h-4 w-4" />} color="violet" />
+        <StatCard label="Sobrantes total" value={fmtCOP(data.sobrantesTotal)} icon={<TrendingUp className="h-4 w-4" />} color="blue" />
+        <StatCard label="Inventario total" value={fmtGal(data.inventarioGalones)} icon={<Droplet className="h-4 w-4" />} color="blue" />
+      </div>
+
+      {/* Product breakdown */}
+      {productSales.length > 0 && (
+        <Card className="p-5">
+          <h3 className="text-sm font-bold text-slate-900 mb-3">Galonaje por combustible</h3>
+          <div className="space-y-2">
+            {productSales.map((p) => (
+              <div key={p.nombre} className="flex items-center gap-3">
+                <span className="h-3 w-3 rounded-full" style={{ background: p.color }} />
+                <span className="text-sm text-slate-700 flex-1">{p.nombre}</span>
+                <span className="text-sm font-bold text-slate-900">{p.galones.toLocaleString('es-CO', { maximumFractionDigits: 2 })} gal</span>
+                {data.galones > 0 && <span className="text-xs text-slate-400">{((p.galones / data.galones) * 100).toFixed(1)}%</span>}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
+
+// Type helper for DiagnosticoSection
+function useDiagnostico() { return null as unknown as ReturnType<typeof useMemo<{ hayDatos: boolean; puntajeGeneral: number; saludFinanciera: number; estadoVentas: number; estadoInventario: number; ventas: number; galones: number; ingresos: number; gastos: number; utilidad: number; ventasChange: number | null; cuadrePct: number | null; cuadresCorrectos: number; cuadresConDiferencia: number; faltantesTotal: number; sobrantesTotal: number; inventarioGalones: number; tanquesNormales: number; tanquesBajos: number; tanquesCriticos: number; carrotanquesGalones: number; carrotanquesCount: number; empleadosActivos: number; parqueaderoIngresos: number; parqueaderoVehiculos: number }> | null>; }
 
 function HealthBar({ label, value, icon, color }: { label: string; value: number; icon: React.ReactNode; color: 'emerald' | 'blue' | 'amber' }) {
   const c = { emerald: { text: 'text-emerald-600', bg: 'bg-emerald-500', light: 'bg-emerald-50' }, blue: { text: 'text-blue-600', bg: 'bg-blue-500', light: 'bg-blue-50' }, amber: { text: 'text-amber-600', bg: 'bg-amber-500', light: 'bg-amber-50' } }[color];
@@ -368,14 +349,33 @@ function HealthBar({ label, value, icon, color }: { label: string; value: number
   );
 }
 
+function StatCard({ label, value, icon, color }: { label: string; value: string; icon: React.ReactNode; color: string }) {
+  const cm: Record<string, string> = {
+    emerald: 'bg-emerald-50 text-emerald-600', blue: 'bg-blue-50 text-blue-600',
+    amber: 'bg-amber-50 text-amber-600', red: 'bg-red-50 text-red-600',
+    violet: 'bg-violet-50 text-violet-600',
+  };
+  return (
+    <Card className="p-4">
+      <div className="flex items-center gap-2">
+        <div className={cn('flex h-8 w-8 items-center justify-center rounded-lg', cm[color])}>{icon}</div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide truncate">{label}</p>
+          <p className="text-sm font-bold text-slate-900 truncate">{value}</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 // ===== ALERTAS =====
-function AlertasSection({ alertas }: { alertas: { tipo: string; titulo: string; descripcion: string; icon: typeof AlertTriangle; color: string; bgColor: string }[] }) {
+function AlertasSection({ alertas }: { alertas: AlertaItem[] }) {
   if (alertas.length === 0) {
     return (
       <Card className="flex flex-col items-center justify-center py-16 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50"><CheckCircle2 className="h-8 w-8 text-emerald-500" /></div>
-        <h3 className="mt-4 text-base font-semibold text-slate-700">Todo en orden</h3>
-        <p className="mt-1 max-w-md text-sm text-slate-500">No se detectaron alertas en tu negocio. Sigue así.</p>
+        <h3 className="mt-4 text-base font-semibold text-slate-700">No hay alertas activas</h3>
+        <p className="mt-1 max-w-md text-sm text-slate-500">No se detectaron problemas en el periodo actual.</p>
       </Card>
     );
   }
@@ -384,10 +384,29 @@ function AlertasSection({ alertas }: { alertas: { tipo: string; titulo: string; 
       {alertas.map((a, i) => (
         <Card key={i} className="p-5 transition-shadow hover:shadow-soft-lg">
           <div className="flex items-start gap-3">
-            <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', a.bgColor, a.color)}><a.icon className="h-5 w-5" /></div>
+            <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+              a.prioridad === 'critica' ? 'bg-red-50 text-red-600' :
+              a.prioridad === 'alta' ? 'bg-orange-50 text-orange-600' :
+              a.prioridad === 'media' ? 'bg-amber-50 text-amber-600' :
+              'bg-blue-50 text-blue-600')}>
+              <AlertTriangle className="h-5 w-5" />
+            </div>
             <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className={cn('text-[10px] font-bold uppercase',
+                  a.prioridad === 'critica' ? 'text-red-600' :
+                  a.prioridad === 'alta' ? 'text-orange-600' :
+                  a.prioridad === 'media' ? 'text-amber-600' : 'text-blue-600')}>
+                  {a.prioridad}
+                </span>
+                {a.estacionNombre && <span className="text-[10px] text-slate-400">{a.estacionNombre}</span>}
+              </div>
               <p className="text-sm font-semibold text-slate-900">{a.titulo}</p>
               <p className="mt-1 text-xs leading-relaxed text-slate-500">{a.descripcion}</p>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{a.modulo}</span>
+                <span className="text-[10px] text-slate-400">{a.fecha}</span>
+              </div>
             </div>
           </div>
         </Card>
@@ -397,13 +416,13 @@ function AlertasSection({ alertas }: { alertas: { tipo: string; titulo: string; 
 }
 
 // ===== RECOMENDACIONES =====
-function RecomendacionesSection({ recomendaciones }: { recomendaciones: { titulo: string; descripcion: string; icon: typeof Lightbulb; color: string; bgColor: string }[] }) {
+function RecomendacionesSection({ recomendaciones }: { recomendaciones: { titulo: string; desc: string; icon: typeof Lightbulb; color: string; bg: string }[] }) {
   if (recomendaciones.length === 0) {
     return (
       <Card className="flex flex-col items-center justify-center py-16 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100"><Lightbulb className="h-8 w-8 text-slate-400" /></div>
-        <h3 className="mt-4 text-base font-semibold text-slate-700">Sin recomendaciones por ahora</h3>
-        <p className="mt-1 max-w-md text-sm text-slate-500">Registra más datos para obtener análisis personalizados.</p>
+        <h3 className="mt-4 text-base font-semibold text-slate-700">No hay datos suficientes</h3>
+        <p className="mt-1 max-w-md text-sm text-slate-500">Registra más datos en el módulo de Estaciones para obtener recomendaciones personalizadas.</p>
       </Card>
     );
   }
@@ -412,10 +431,10 @@ function RecomendacionesSection({ recomendaciones }: { recomendaciones: { titulo
       {recomendaciones.map((r, i) => (
         <Card key={i} className="p-5 transition-all hover:shadow-soft-lg">
           <div className="flex items-start gap-3">
-            <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', r.bgColor, r.color)}><r.icon className="h-5 w-5" /></div>
+            <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', r.bg, r.color)}><r.icon className="h-5 w-5" /></div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-slate-900">{r.titulo}</p>
-              <p className="mt-1 text-xs leading-relaxed text-slate-500">{r.descripcion}</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-500">{r.desc}</p>
             </div>
           </div>
         </Card>
@@ -425,7 +444,13 @@ function RecomendacionesSection({ recomendaciones }: { recomendaciones: { titulo
 }
 
 // ===== CHAT =====
-function ChatSection({ ventas, finanzas, productos, detalles }: { ventas: Venta[]; finanzas: Finanza[]; productos: Producto[]; detalles: Detalle[] }) {
+function ChatSection({ kpis, alertas, productSales, estacionNombre, period }: {
+  kpis: KpiData | null;
+  alertas: AlertaItem[];
+  productSales: ProductSales[];
+  estacionNombre: string;
+  period: { start: string; end: string; label: string };
+}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -437,43 +462,92 @@ function ChatSection({ ventas, finanzas, productos, detalles }: { ventas: Venta[
   }, [messages, isTyping]);
 
   const buildContext = useCallback(() => {
-    const now = new Date();
-    const ventasMes = ventas.filter((v) => { const d = new Date(v.fecha + 'T00:00:00'); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
-    const ingresosMes = ventasMes.reduce((s, v) => s + Number(v.total), 0);
-    const gastosMes = finanzas.filter((f) => f.tipo === 'Gasto' && new Date(f.fecha + 'T00:00:00').getMonth() === now.getMonth()).reduce((s, f) => s + Number(f.valor), 0);
-    const agotados = productos.filter((p) => p.cantidad <= 0);
-    const stockBajo = productos.filter((p) => p.cantidad > 0 && p.cantidad <= p.stock_minimo);
-    const valorInventario = productos.reduce((s, p) => s + Number(p.precio_venta) * p.cantidad, 0);
+    const contextParts: string[] = [
+      `Eres un consultor empresarial experto en estaciones de servicio. Responde en español, de forma clara y profesional.`,
+      `NO inventes datos. Utiliza ÚNICAMENTE los datos que se te proporcionan a continuación.`,
+      `Si no tienes información suficiente para responder, di "No tengo suficiente información para responder eso".`,
+      `Contexto: Estación: ${estacionNombre}`,
+      `Periodo: ${period.start} a ${period.end}`,
+    ];
 
-    const prodCount = new Map<string, number>();
-    detalles.forEach((d) => prodCount.set(d.producto_id, (prodCount.get(d.producto_id) || 0) + d.cantidad));
-    let topProducto = 'N/A'; let topCount = 0;
-    prodCount.forEach((c, pid) => { if (c > topCount) { topCount = c; topProducto = productos.find((p) => p.id === pid)?.nombre || 'N/A'; } });
+    if (kpis) {
+      contextParts.push(`\nDATOS REALES DEL NEGOCIO:`);
+      contextParts.push(`- Ventas del periodo: ${fmtCOP(kpis.ventas)}`);
+      contextParts.push(`- Galones vendidos: ${kpis.galones.toLocaleString('es-CO')} gal`);
+      contextParts.push(`- Ingresos: ${fmtCOP(kpis.ingresos)}`);
+      contextParts.push(`- Gastos: ${fmtCOP(kpis.gastos)}`);
+      contextParts.push(`- Utilidad: ${fmtCOP(kpis.utilidad)}`);
 
-    return `Eres un consultor empresarial experto. Responde en español, de forma clara y profesional con consejos específicos y accionables basados en los datos del negocio.
+      if (kpis.prevVentas > 0) {
+        const change = ((kpis.ventas - kpis.prevVentas) / kpis.prevVentas) * 100;
+        contextParts.push(`- Ventas periodo anterior: ${fmtCOP(kpis.prevVentas)} (cambio: ${change.toFixed(1)}%)`);
+      }
+      if (kpis.prevGalones > 0) {
+        const change = ((kpis.galones - kpis.prevGalones) / kpis.prevGalones) * 100;
+        contextParts.push(`- Galones periodo anterior: ${kpis.prevGalones.toLocaleString('es-CO')} gal (cambio: ${change.toFixed(1)}%)`);
+      }
 
-Datos reales del negocio:
-- Total de ventas registradas: ${ventas.length}
-- Ingresos del mes actual: ${formatCurrency(ingresosMes)}
-- Gastos del mes actual: ${formatCurrency(gastosMes)}
-- Utilidad del mes: ${formatCurrency(ingresosMes - gastosMes)}
-- Total de productos en inventario: ${productos.length}
-- Productos agotados: ${agotados.length}${agotados.length > 0 ? ` (${agotados.map((p) => p.nombre).join(', ')})` : ''}
-- Productos con stock bajo: ${stockBajo.length}${stockBajo.length > 0 ? ` (${stockBajo.map((p) => p.nombre).join(', ')})` : ''}
-- Valor total del inventario: ${formatCurrency(valorInventario)}
-- Producto más vendido: ${topProducto} (${topCount} unidades)
-- Total de transacciones financieras: ${finanzas.length}`;
-  }, [ventas, finanzas, productos, detalles]);
+      contextParts.push(`- Inventario actual: ${kpis.inventarioGalones.toLocaleString('es-CO')} gal`);
+      contextParts.push(`- Tanques normales: ${kpis.tanquesNormales}`);
+      contextParts.push(`- Tanques bajos: ${kpis.tanquesBajos}`);
+      contextParts.push(`- Tanques críticos: ${kpis.tanquesCriticos}`);
+
+      const totalCuadres = kpis.cuadresCorrectos + kpis.cuadresConDiferencia;
+      if (totalCuadres > 0) {
+        const pct = Math.round((kpis.cuadresCorrectos / totalCuadres) * 100);
+        contextParts.push(`- Cuadres: ${kpis.cuadresCorrectos} correctos, ${kpis.cuadresConDiferencia} con diferencias (${pct}%)`);
+        contextParts.push(`- Faltantes acumulados: ${fmtCOP(kpis.faltantesTotal)}`);
+        contextParts.push(`- Sobrantes acumulados: ${fmtCOP(kpis.sobrantesTotal)}`);
+      } else {
+        contextParts.push(`- Cuadres: No hay datos de cuadres para este periodo.`);
+      }
+
+      contextParts.push(`- Carrotanques recibidos: ${kpis.carrotanquesCount} (${kpis.carrotanquesGalones.toLocaleString('es-CO')} gal)`);
+      contextParts.push(`- Empleados activos: ${kpis.empleadosActivos}`);
+      contextParts.push(`- Parqueadero: ${kpis.parqueaderoVehiculos} vehículos, ingresos ${fmtCOP(kpis.parqueaderoIngresos)}`);
+    } else {
+      contextParts.push(`\nNo hay datos disponibles para este periodo.`);
+    }
+
+    if (productSales.length > 0) {
+      contextParts.push(`\nGALONAJE POR COMBUSTIBLE:`);
+      productSales.forEach((p) => {
+        const pct = kpis && kpis.galones > 0 ? ((p.galones / kpis.galones) * 100).toFixed(1) : '0';
+        contextParts.push(`- ${p.nombre}: ${p.galones.toLocaleString('es-CO', { maximumFractionDigits: 2 })} gal (${pct}%)`);
+      });
+    } else {
+      contextParts.push(`\nGALONAJE POR COMBUSTIBLE: No hay datos suficientes.`);
+    }
+
+    if (alertas.length > 0) {
+      contextParts.push(`\nALERTAS ACTIVAS (${alertas.length}):`);
+      alertas.slice(0, 10).forEach((a) => {
+        contextParts.push(`- [${a.prioridad.toUpperCase()}] ${a.titulo}: ${a.descripcion}`);
+      });
+    } else {
+      contextParts.push(`\nALERTAS ACTIVAS: No hay alertas activas.`);
+    }
+
+    contextParts.push(`\nREGLAS:`);
+    contextParts.push(`1. Todos los datos de combustible están en GALONES, no litros.`);
+    contextParts.push(`2. No confundas ventas con utilidad. Ventas = dinero generado. Utilidad = ingresos - gastos.`);
+    contextParts.push(`3. Si el usuario pregunta por una estación diferente a "${estacionNombre}" y no tienes datos de esa estación, responde: "No tienes permisos para consultar esa estación."`);
+    contextParts.push(`4. Basa todas tus respuestas en los datos proporcionados arriba. No inventes números.`);
+
+    return contextParts.join('\n');
+  }, [kpis, alertas, productSales, estacionNombre, period]);
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isTyping) return;
-    if (!apiKey) {
-      setMessages((prev) => [...prev, { role: 'user', content: text }, { role: 'error', content: 'NEXT_PUBLIC_GEMINI_API_KEY no está configurada en el archivo .env.' }]);
-      return;
-    }
     setMessages((prev) => [...prev, { role: 'user', content: text }]);
     setInput('');
     setIsTyping(true);
+
+    if (!apiKey) {
+      setMessages((prev) => [...prev, { role: 'error', content: 'El análisis inteligente no está disponible en este momento. La API Key de Gemini no está configurada.' }]);
+      setIsTyping(false);
+      return;
+    }
 
     try {
       const context = buildContext();
@@ -482,21 +556,32 @@ Datos reales del negocio:
       setMessages((prev) => [...prev, { role: 'ai', content: response }]);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error('[CentroInteligente] Error final:', errorMsg);
-      setMessages((prev) => [...prev, { role: 'error', content: errorMsg }]);
+      console.error('[CentroInteligente] Error:', errorMsg);
+      setMessages((prev) => [...prev, { role: 'error', content: 'El análisis inteligente no está disponible en este momento. Los datos del dashboard continúan funcionando normalmente.' }]);
     } finally {
       setIsTyping(false);
     }
   };
 
   const suggestedPrompts = [
-    '¿Cómo está mi negocio en este momento?',
-    '¿Qué productos necesitan reposición?',
-    '¿Cómo puedo mejorar mis utilidades?',
+    '¿Cómo están las ventas?',
+    '¿Cuántos galones vendimos?',
+    '¿Qué combustible se vende más?',
+    '¿Qué debería revisar hoy?',
+    '¿Cuáles son los mayores faltantes?',
   ];
 
   return (
-    <Card className="flex flex-col overflow-hidden p-0" style={{ height: 'calc(100vh - 280px)', minHeight: '400px' }}>
+    <Card className="flex flex-col overflow-hidden p-0" style={{ height: 'calc(100vh - 320px)', minHeight: '400px' }}>
+      {/* Context bar */}
+      <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 flex items-center gap-2 text-xs text-slate-500">
+        <Building2 className="h-3.5 w-3.5 text-slate-400" />
+        <span className="font-semibold">{estacionNombre}</span>
+        <span className="text-slate-300">·</span>
+        <Calendar className="h-3.5 w-3.5 text-slate-400" />
+        <span>{period.start} → {period.end}</span>
+      </div>
+
       <div ref={scrollRef} className="flex-1 space-y-6 overflow-y-auto bg-slate-50/40 p-4 sm:p-6">
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center text-center">
@@ -504,7 +589,9 @@ Datos reales del negocio:
               <Bot className="h-8 w-8" />
             </div>
             <h3 className="mt-4 text-base font-semibold text-slate-700">Consultar IA</h3>
-            <p className="mt-1 max-w-md text-sm text-slate-500">Pregúntame sobre tu negocio. Tengo acceso a tus datos de ventas, inventario y finanzas para darte recomendaciones personalizadas.</p>
+            <p className="mt-1 max-w-md text-sm text-slate-500">
+              Pregúntame sobre {estacionNombre}. Tengo acceso a tus datos reales de galonaje, ventas, inventario, cuadres y alertas.
+            </p>
             <div className="mt-6 flex flex-wrap justify-center gap-2">
               {suggestedPrompts.map((p) => (
                 <button key={p} onClick={() => sendMessage(p)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary">{p}</button>
@@ -516,12 +603,11 @@ Datos reales del negocio:
           if (msg.role === 'error') {
             return (
               <div key={i} className="flex gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
                   <AlertTriangle className="h-4 w-4" />
                 </div>
-                <div className="max-w-[85%] rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-relaxed text-red-700">
-                  <p className="mb-1 font-semibold">Error de la API de Gemini</p>
-                  <p className="font-mono text-xs">{msg.content}</p>
+                <div className="max-w-[85%] rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-700">
+                  {msg.content}
                 </div>
               </div>
             );
@@ -556,7 +642,7 @@ Datos reales del negocio:
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Escribe tu consulta sobre el negocio..."
+            placeholder={`Pregunta sobre ${estacionNombre}...`}
             className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
           <button type="submit" disabled={!input.trim() || isTyping} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-white shadow-soft transition-all hover:bg-blue-600 disabled:opacity-50" aria-label="Enviar">
@@ -566,8 +652,4 @@ Datos reales del negocio:
       </div>
     </Card>
   );
-}
-
-function formatCurrency(v: number) {
-  return v.toLocaleString('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 }

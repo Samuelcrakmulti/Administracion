@@ -19,6 +19,8 @@ import {
   ParkingSquare,
   UsersRound,
   Fuel,
+  LayoutDashboard,
+  Upload,
 } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { useAuth } from '@/components/auth-provider';
@@ -32,8 +34,10 @@ const navItems = [
   { href: '/dashboard/parqueadero', label: 'Parqueadero', icon: ParkingSquare },
   { href: '/dashboard/talento', label: 'Talento Humano', icon: UsersRound },
   { href: '/dashboard/estaciones', label: 'Estaciones de Servicio', icon: Fuel },
+  { href: '/dashboard/centro-control', label: 'Centro de Control', icon: LayoutDashboard },
   { href: '/dashboard/asistente', label: 'Centro Inteligente', icon: Brain },
   { href: '/dashboard/reportes', label: 'Reportes', icon: FileText },
+  { href: '/dashboard/importar', label: 'Importar Datos', icon: Upload },
   { href: '/dashboard/comunidad', label: 'Comunidad', icon: Users },
   { href: '/dashboard/configuracion', label: 'Configuración', icon: Settings },
 ];
