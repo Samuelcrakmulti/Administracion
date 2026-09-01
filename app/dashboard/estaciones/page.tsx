@@ -7,6 +7,7 @@ import {
   MapPin, CheckCircle2, AlertTriangle, RefreshCw, Activity,
   History, ClipboardList, BadgeCheck, ShieldCheck,
   Database, Truck, Tag, BarChart3, BellRing, ClipboardCheck, Scale,
+  Calendar,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -37,13 +38,16 @@ import { EstCierreOperativo } from '@/components/dashboard/estaciones/est-cierre
 import { EstGalonajeDashboard } from '@/components/dashboard/estaciones/est-galonaje-dashboard';
 import { EstGalonajeHistorial } from '@/components/dashboard/estaciones/est-galonaje-historial';
 import { EstGalonajeConciliacion } from '@/components/dashboard/estaciones/est-galonaje-conciliacion';
+import { EstOperacionDiaria, EstOperacionCorporativa } from '@/components/dashboard/estaciones/est-operacion-diaria';
 
-type SectionKey = 'dashboard' | 'operacion' | 'cierre' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config' | 'tanques' | 'inv-inicial' | 'inv-final' | 'conciliacion' | 'carrotanques' | 'hist-inventario' | 'precios' | 'dash-inventario' | 'alertas-inventario' | 'galonaje-dashboard' | 'galonaje-historial' | 'galonaje-conciliacion';
+type SectionKey = 'dashboard' | 'op-diaria' | 'op-corporativa' | 'operacion' | 'cierre' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config' | 'tanques' | 'inv-inicial' | 'inv-final' | 'conciliacion' | 'carrotanques' | 'hist-inventario' | 'precios' | 'dash-inventario' | 'alertas-inventario' | 'galonaje-dashboard' | 'galonaje-historial' | 'galonaje-conciliacion';
 
 const NAV_GROUPS = [
   {
     label: 'Operación',
     items: [
+      { key: 'op-diaria' as SectionKey, label: 'Panel del Día', icon: Calendar },
+      { key: 'op-corporativa' as SectionKey, label: 'Vista Corporativa', icon: Building2 },
       { key: 'operacion' as SectionKey, label: 'Operación Diaria', icon: Activity },
       { key: 'cierre' as SectionKey, label: 'Cierre Operativo', icon: ClipboardCheck },
       { key: 'galonaje-dashboard' as SectionKey, label: 'Galonaje Dashboard', icon: BarChart3 },
@@ -106,7 +110,7 @@ const ESTADO_BADGE: Record<string, { label: string; cls: string; dot: string }> 
 export default function EstacionesPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState<SectionKey>('operacion');
+  const [active, setActive] = useState<SectionKey>('op-diaria');
   const [estaciones, setEstaciones] = useState<Estacion[]>([]);
   const [islas, setIslas] = useState<Isla[]>([]);
   const [surtidores, setSurtidores] = useState<Surtidor[]>([]);
@@ -184,7 +188,7 @@ export default function EstacionesPage() {
   const turnoEstadoBadge = turnoActivo ? ESTADO_BADGE[turnoActivo.estado] : null;
 
   const renderContent = () => {
-    const needsStation = !['estaciones', 'productos', 'dashboard', 'galonaje-dashboard'].includes(active) && !active.startsWith('dash-inventario') && active !== 'precios';
+    const needsStation = !['estaciones', 'productos', 'dashboard', 'galonaje-dashboard', 'op-corporativa'].includes(active) && !active.startsWith('dash-inventario') && active !== 'precios';
     if (needsStation && !selectedEst) {
       return (
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 py-16 text-center">
@@ -205,6 +209,22 @@ export default function EstacionesPage() {
     );
 
     switch (active) {
+      case 'op-diaria':
+        return selectedEst ? (
+          <EstOperacionDiaria
+            estacion={selectedEst}
+            tanques={tanques}
+            onGoToOperacion={() => setActive('operacion')}
+            onGoToCierre={() => setActive('cierre')}
+            onGoToCuadre={() => setActive('cuadre')}
+            onGoToCarrotanques={() => setActive('carrotanques')}
+            onRefresh={handleRefresh}
+          />
+        ) : null;
+
+      case 'op-corporativa':
+        return <EstOperacionCorporativa estaciones={estaciones} />;
+
       case 'operacion':
         return selectedEst ? (
           <EstOperacion estacion={selectedEst} islas={islas} surtidores={surtidores} mangueras={mangueras}
