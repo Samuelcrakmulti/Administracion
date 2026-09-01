@@ -53,6 +53,8 @@ export type ParsedRow = {
   diferencia: number | null;
   empleado: string | null;
   precio: number | null;
+  esVale: boolean;
+  esCarrotanque: boolean;
   estado: 'valido' | 'advertencia' | 'error';
   issues: ValidationIssue[];
 };
@@ -349,6 +351,8 @@ export function parseSheetRows(
       diferencia,
       empleado,
       precio,
+      esVale,
+      esCarrotanque,
       estado,
       issues,
     });

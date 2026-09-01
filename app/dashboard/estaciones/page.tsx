@@ -36,8 +36,9 @@ import { EstInventarioConciliacion } from '@/components/dashboard/estaciones/est
 import { EstCierreOperativo } from '@/components/dashboard/estaciones/est-cierre-operativo';
 import { EstGalonajeDashboard } from '@/components/dashboard/estaciones/est-galonaje-dashboard';
 import { EstGalonajeHistorial } from '@/components/dashboard/estaciones/est-galonaje-historial';
+import { EstGalonajeConciliacion } from '@/components/dashboard/estaciones/est-galonaje-conciliacion';
 
-type SectionKey = 'dashboard' | 'operacion' | 'cierre' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config' | 'tanques' | 'inv-inicial' | 'inv-final' | 'conciliacion' | 'carrotanques' | 'hist-inventario' | 'precios' | 'dash-inventario' | 'alertas-inventario' | 'galonaje-dashboard' | 'galonaje-historial';
+type SectionKey = 'dashboard' | 'operacion' | 'cierre' | 'cuadre' | 'entrega' | 'aprobacion' | 'historial' | 'estaciones' | 'islas' | 'surtidores' | 'mangueras' | 'productos' | 'mapa' | 'config' | 'tanques' | 'inv-inicial' | 'inv-final' | 'conciliacion' | 'carrotanques' | 'hist-inventario' | 'precios' | 'dash-inventario' | 'alertas-inventario' | 'galonaje-dashboard' | 'galonaje-historial' | 'galonaje-conciliacion';
 
 const NAV_GROUPS = [
   {
@@ -47,6 +48,7 @@ const NAV_GROUPS = [
       { key: 'cierre' as SectionKey, label: 'Cierre Operativo', icon: ClipboardCheck },
       { key: 'galonaje-dashboard' as SectionKey, label: 'Galonaje Dashboard', icon: BarChart3 },
       { key: 'galonaje-historial' as SectionKey, label: 'Historial Lecturas', icon: History },
+      { key: 'galonaje-conciliacion' as SectionKey, label: 'Conciliación Galonaje', icon: Scale },
       { key: 'cuadre' as SectionKey, label: 'Cuadre de Caja', icon: ClipboardList },
       { key: 'entrega' as SectionKey, label: 'Entrega de Turno', icon: BadgeCheck },
       { key: 'aprobacion' as SectionKey, label: 'Aprobación', icon: ShieldCheck },
@@ -217,6 +219,9 @@ export default function EstacionesPage() {
 
       case 'galonaje-historial':
         return selectedEst ? <EstGalonajeHistorial estacion={selectedEst} /> : null;
+
+      case 'galonaje-conciliacion':
+        return <EstGalonajeConciliacion estaciones={estaciones} />;
 
       case 'cuadre':
         if (!selectedEst) return null;

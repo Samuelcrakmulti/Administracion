@@ -95,12 +95,31 @@ export function ImportHistory() {
     setReverting(batch.id);
     try {
       // Delete all lecturas from this batch
-      const { error: delErr } = await supabase
+      const { error: delLecturasErr } = await supabase
         .from('est_lecturas')
         .delete()
         .eq('import_batch_id', batch.id);
 
-      if (delErr) throw delErr;
+      if (delLecturasErr) console.error('[Revert] lecturas error:', delLecturasErr);
+
+      // Delete vales from this batch
+      const { error: delValesErr } = await supabase
+        .from('est_vales')
+        .delete()
+        .eq('import_batch_id', batch.id);
+
+      if (delValesErr) console.error('[Revert] vales error:', delValesErr);
+
+      // Delete carrotanques from this batch
+      const { error: delCarrotanquesErr } = await supabase
+        .from('est_carrotanques')
+        .delete()
+        .eq('import_batch_id', batch.id);
+
+      if (delCarrotanquesErr) console.error('[Revert] carrotanques error:', delCarrotanquesErr);
+
+      // Delete import errors from this batch
+      await supabase.from('est_import_errores').delete().eq('batch_id', batch.id);
 
       // Update batch status
       const { error: updErr } = await supabase

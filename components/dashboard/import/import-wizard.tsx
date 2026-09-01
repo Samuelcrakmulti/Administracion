@@ -25,6 +25,23 @@ import {
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 type TipoImportacion = 'galonaje' | 'iniciales' | 'otros';
+type DuplicateMode = 'omit' | 'new_only' | 'force';
+
+type ImportResult = {
+  batchId: string;
+  imported: number;
+  omitted: number;
+  errors: number;
+  warnings: number;
+  duplicates: number;
+  galonesProcesados: number;
+  valesImportados: number;
+  carrotanquesImportados: number;
+  productosDetectados: string[];
+  turnosDetectados: string[];
+  diferenciasDetectadas: number;
+  conciliados: number;
+};
 
 const STEP_LABELS = ['Archivo', 'Estructura', 'Mapeo', 'Validación', 'Vista previa', 'Confirmación', 'Importar', 'Resultado'];
 
@@ -53,8 +70,10 @@ export function ImportWizard({ estaciones, productos, mangueras }: {
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
-  const [importResult, setImportResult] = useState<{ batchId: string; imported: number; omitted: number; errors: number; warnings: number } | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [alreadyImported, setAlreadyImported] = useState(false);
+  const [duplicateMode, setDuplicateMode] = useState<DuplicateMode>('omit');
+  const [existingBatchInfo, setExistingBatchInfo] = useState<{ id: string; nombre_archivo: string; created_at: string } | null>(null);
   const [sheetData, setSheetData] = useState<Record<string, Record<string, unknown>[]>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -95,8 +114,15 @@ export function ImportWizard({ estaciones, productos, mangueras }: {
       }
 
       // Check for duplicate import
-      const { data: existing } = await supabase.from('est_import_batches').select('id').eq('file_hash', result.fileHash);
+      const { data: existing } = await supabase
+        .from('est_import_batches')
+        .select('id, nombre_archivo, created_at')
+        .eq('file_hash', result.fileHash)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      const existingBatch = (existing?.[0] as { id: string; nombre_archivo: string; created_at: string } | undefined) ?? null;
       setAlreadyImported((existing?.length ?? 0) > 0);
+      setExistingBatchInfo(existingBatch);
 
       setStep(2);
     } catch (err) {
@@ -197,11 +223,27 @@ export function ImportWizard({ estaciones, productos, mangueras }: {
         await supabase.from('est_import_errores').insert(errorRecords);
       }
 
-      // Import valid rows as lecturas
+      // Split rows by type: vales, carrotanques, and regular lecturas
+      const valesRows = validRows.filter((r) => r.esVale);
+      const carrotanquesRows = validRows.filter((r) => r.esCarrotanque);
+      const lecturasRows = validRows.filter((r) => !r.esVale && !r.esCarrotanque);
+
+      // For duplicate mode 'omit', filter out rows that already exist in DB
+      let rowsToImport = lecturasRows;
+      if (duplicateMode === 'omit' && alreadyImported) {
+        // Skip all — already imported
+        rowsToImport = [];
+      }
+
       let imported = 0;
+      let valesImported = 0;
+      let carrotanquesImported = 0;
+      let galonesProcesados = 0;
       const batchSize = 100;
-      for (let i = 0; i < validRows.length; i += batchSize) {
-        const chunk = validRows.slice(i, i + batchSize);
+
+      // Import regular lecturas
+      for (let i = 0; i < rowsToImport.length; i += batchSize) {
+        const chunk = rowsToImport.slice(i, i + batchSize);
         const lecturas = chunk.map((r) => {
           const productId = r.producto ? productMappings[r.producto] ?? null : null;
           return {
@@ -226,20 +268,101 @@ export function ImportWizard({ estaciones, productos, mangueras }: {
           console.error('[Import] Insert error:', insertErr);
         } else {
           imported += lecturas.length;
+          galonesProcesados += chunk.reduce((sum, r) => sum + (r.galones ?? 0), 0);
         }
-        setImportProgress(Math.min(Math.round(((i + batchSize) / validRows.length) * 100), 100));
+        setImportProgress(Math.min(Math.round(((i + batchSize) / rowsToImport.length) * 50), 50));
       }
+
+      // Import vales to est_vales
+      if (valesRows.length > 0) {
+        for (let i = 0; i < valesRows.length; i += batchSize) {
+          const chunk = valesRows.slice(i, i + batchSize);
+          const vales = chunk.map((r) => ({
+            estacion_id: estacionId,
+            fecha: r.fecha,
+            turno: r.turno ?? null,
+            nombre: r.producto ?? 'Vale',
+            cantidad: r.galones ?? 0,
+            valor: r.precio ? (r.galones ?? 0) * r.precio : 0,
+            observacion: r.empleado ? `Empleado: ${r.empleado}` : null,
+            import_batch_id: batchId,
+            source: 'imported',
+          }));
+          const { error: insertErr } = await supabase.from('est_vales').insert(vales);
+          if (insertErr) {
+            console.error('[Import] Vales insert error:', insertErr);
+          } else {
+            valesImported += vales.length;
+          }
+        }
+      }
+
+      // Import carrotanques to est_carrotanques
+      if (carrotanquesRows.length > 0) {
+        for (let i = 0; i < carrotanquesRows.length; i += batchSize) {
+          const chunk = carrotanquesRows.slice(i, i + batchSize);
+          const carrotanques = chunk.map((r) => ({
+            estacion_id: estacionId,
+            fecha: r.fecha,
+            tipo_combustible: r.producto ?? null,
+            cantidad_galones: r.galones ?? 0,
+            proveedor: r.empleado ?? null,
+            import_batch_id: batchId,
+            source: 'imported',
+          }));
+          const { error: insertErr } = await supabase.from('est_carrotanques').insert(carrotanques);
+          if (insertErr) {
+            console.error('[Import] Carrotanques insert error:', insertErr);
+          } else {
+            carrotanquesImported += carrotanques.length;
+          }
+        }
+      }
+
+      setImportProgress(75);
+
+      // Post-import validation: detect products, turnos, and calculate conciliación
+      const productosDetectados = [...new Set(validRows.map((r) => r.producto).filter(Boolean))] as string[];
+      const turnosDetectados = [...new Set(validRows.map((r) => r.turno).filter(Boolean))] as string[];
+
+      // Conciliación: compare galonaje vs inicial/final for rows that have both
+      const rowsWithBoth = validRows.filter((r) => r.inicial !== null && r.final !== null && r.galones !== null);
+      const diferenciasDetectadas = rowsWithBoth.filter((r) => {
+        const calculated = (r.final! - r.inicial!);
+        return Math.abs(calculated - r.galones!) > 0.01;
+      }).length;
+      const conciliados = rowsWithBoth.length - diferenciasDetectadas;
+
+      setImportProgress(90);
+
+      const totalImported = imported + valesImported + carrotanquesImported;
+      const estadoFinal = warningRows.length > 0 ? 'completado_con_advertencias' : 'completado';
 
       // Update batch status
       await supabase.from('est_import_batches').update({
-        registros_importados: imported,
-        estado: 'completado',
-        resultado_resumen: `Importación completada: ${imported} registros importados, ${errorRows.length} omitidos, ${warningRows.length} advertencias.`,
+        registros_importados: totalImported,
+        estado: estadoFinal,
+        resultado_resumen: `Importación completada: ${totalImported} registros (${imported} lecturas, ${valesImported} vales, ${carrotanquesImported} carrotanques), ${errorRows.length} omitidos, ${warningRows.length} advertencias, ${diferenciasDetectadas} diferencias detectadas.`,
       }).eq('id', batchId);
 
-      setImportResult({ batchId, imported, omitted: errorRows.length, errors: errorRows.length, warnings: warningRows.length });
+      setImportProgress(100);
+      setImportResult({
+        batchId,
+        imported: totalImported,
+        omitted: errorRows.length,
+        errors: errorRows.length,
+        warnings: warningRows.length,
+        duplicates: duplicateCount,
+        galonesProcesados,
+        valesImportados,
+        carrotanquesImportados,
+        productosDetectados,
+        turnosDetectados,
+        diferenciasDetectadas,
+        conciliados,
+      });
       setStep(8);
-      toast.success(`Importación completada: ${imported} registros importados.`);
+      toast.success(`Importación completada: ${totalImported} registros importados.`);
     } catch (err) {
       console.error('[Import] Error:', err);
       toast.error('Error durante la importación. Revisa el log para más detalles.');
@@ -273,6 +396,8 @@ export function ImportWizard({ estaciones, productos, mangueras }: {
     setImportResult(null);
     setProductMappings({});
     setAlreadyImported(false);
+    setDuplicateMode('omit');
+    setExistingBatchInfo(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -285,7 +410,7 @@ export function ImportWizard({ estaciones, productos, mangueras }: {
     return { valid, warnings, errors, total: parsedRows.length, newRecords };
   }, [parsedRows, duplicateCount]);
 
-  const canImport = stats.errors === 0 && estacionId && parsedRows.length > 0;
+  const canImport = stats.errors === 0 && estacionId && parsedRows.length > 0 && (!alreadyImported || duplicateMode !== 'omit');
 
   return (
     <div className="space-y-6">
@@ -388,11 +513,52 @@ export function ImportWizard({ estaciones, productos, mangueras }: {
             </div>
 
             {alreadyImported && (
-              <div className="flex items-center gap-3 rounded-xl bg-amber-50 border border-amber-200 p-4">
-                <AlertTriangle className="h-5 w-5 text-amber-600" />
-                <div>
-                  <p className="text-sm font-semibold text-amber-800">Este archivo parece haber sido importado anteriormente</p>
-                  <p className="text-xs text-amber-600">Verifica el historial de importaciones antes de continuar.</p>
+              <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-800">Este archivo ya fue importado anteriormente</p>
+                    {existingBatchInfo && (
+                      <p className="text-xs text-amber-600">
+                        Importado el {new Date(existingBatchInfo.created_at).toLocaleString('es-CO')} — {existingBatchInfo.nombre_archivo}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-amber-700">¿Qué deseas hacer?</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <button
+                      onClick={() => setDuplicateMode('omit')}
+                      className={cn(
+                        'rounded-lg border-2 p-3 text-left text-xs transition-all',
+                        duplicateMode === 'omit' ? 'border-amber-400 bg-amber-100' : 'border-slate-200 hover:border-slate-300'
+                      )}
+                    >
+                      <p className="font-semibold text-slate-800">Omitir existentes</p>
+                      <p className="text-slate-500 mt-0.5">No importar nada de este archivo</p>
+                    </button>
+                    <button
+                      onClick={() => setDuplicateMode('new_only')}
+                      className={cn(
+                        'rounded-lg border-2 p-3 text-left text-xs transition-all',
+                        duplicateMode === 'new_only' ? 'border-amber-400 bg-amber-100' : 'border-slate-200 hover:border-slate-300'
+                      )}
+                    >
+                      <p className="font-semibold text-slate-800">Solo nuevos</p>
+                      <p className="text-slate-500 mt-0.5">Importar únicamente registros no duplicados</p>
+                    </button>
+                    <button
+                      onClick={() => setDuplicateMode('force')}
+                      className={cn(
+                        'rounded-lg border-2 p-3 text-left text-xs transition-all',
+                        duplicateMode === 'force' ? 'border-red-400 bg-red-50' : 'border-slate-200 hover:border-slate-300'
+                      )}
+                    >
+                      <p className="font-semibold text-slate-800">Forzar importación</p>
+                      <p className="text-slate-500 mt-0.5">Importar todo de nuevo (requiere autorización)</p>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -694,18 +860,40 @@ export function ImportWizard({ estaciones, productos, mangueras }: {
               </div>
               <div className="border-t border-slate-100 pt-3 space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-slate-500">Estación destino:</span><span className="font-semibold text-slate-900">{estaciones.find(e => e.id === estacionId)?.nombre ?? '—'}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Archivo:</span><span className="font-semibold text-slate-900">{file?.name}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Periodo:</span><span className="font-semibold text-slate-900">
+                  {(() => {
+                    const validRows = parsedRows.filter((r) => r.fecha);
+                    const dates = validRows.map((r) => r.fecha!).sort();
+                    if (dates.length === 0) return '—';
+                    return `${dates[0]} → ${dates[dates.length - 1]}`;
+                  })()}
+                </span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Tipo:</span><span className="font-semibold text-slate-900 capitalize">{tipoImportacion}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Total filas:</span><span className="font-semibold text-slate-900">{stats.total}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Registros a importar:</span><span className="font-semibold text-emerald-600">{stats.valid + stats.warnings - duplicateCount}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Errores (se omitirán):</span><span className="font-semibold text-red-600">{stats.errors}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Duplicados:</span><span className="font-semibold text-amber-600">{duplicateCount}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Cantidad de registros:</span><span className="font-semibold text-slate-900">{stats.total}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Registros válidos:</span><span className="font-semibold text-emerald-600">{stats.valid}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Advertencias:</span><span className="font-semibold text-amber-600">{stats.warnings}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Errores:</span><span className="font-semibold text-red-600">{stats.errors}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Duplicados:</span><span className="font-semibold text-amber-600">{duplicateCount}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Registros nuevos:</span><span className="font-semibold text-emerald-600">{stats.valid + stats.warnings - duplicateCount}</span></div>
               </div>
+
+              {alreadyImported && duplicateMode === 'omit' && (
+                <div className="flex items-center gap-3 rounded-lg bg-red-50 border border-red-200 p-3">
+                  <X className="h-4 w-4 text-red-500" />
+                  <p className="text-xs text-red-700">La importación está bloqueada porque el archivo ya fue importado y se seleccionó "Omitir existentes".</p>
+                </div>
+              )}
             </div>
 
             <div className="flex items-start gap-3 rounded-xl bg-blue-50 border border-blue-200 p-4">
               <ShieldCheck className="h-5 w-5 text-blue-500 mt-0.5" />
               <p className="text-xs text-blue-700">Los datos importados se marcarán como "imported" y se asociarán a un lote. Podrás revertir la importación desde el historial sin afectar los datos nativos.</p>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-xl bg-amber-50 border border-amber-200 p-4">
+              <ShieldCheck className="h-5 w-5 text-amber-500 mt-0.5" />
+              <p className="text-xs text-amber-800"><strong>¿Confirmas que deseas importar estos datos?</strong> Los datos importados se marcarán como "imported" y se asociarán a un lote. Podrás revertir la importación desde el historial sin afectar los datos nativos.</p>
             </div>
 
             <div className="flex justify-between">
@@ -759,8 +947,58 @@ export function ImportWizard({ estaciones, productos, mangueras }: {
               <div className="rounded-xl bg-amber-50 p-4 text-center"><p className="text-2xl font-bold text-amber-700">{importResult.warnings}</p><p className="text-xs text-amber-600">Advertencias</p></div>
             </div>
 
+            {/* Detailed summary (section 34) */}
+            <div className="rounded-xl border border-slate-200 p-5 space-y-3">
+              <p className="text-sm font-bold text-slate-900">Resumen detallado</p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-slate-500">Registros procesados:</span><span className="font-semibold text-slate-900">{importResult.imported + importResult.omitted}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Importados:</span><span className="font-semibold text-emerald-600">{importResult.imported}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Omitidos:</span><span className="font-semibold text-slate-600">{importResult.omitted}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Errores:</span><span className="font-semibold text-red-600">{importResult.errors}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Advertencias:</span><span className="font-semibold text-amber-600">{importResult.warnings}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Duplicados:</span><span className="font-semibold text-amber-600">{importResult.duplicates}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Galones procesados:</span><span className="font-semibold text-slate-900">{importResult.galonesProcesados.toLocaleString('es-CO', { maximumFractionDigits: 2 })}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Diferencias detectadas:</span><span className="font-semibold text-amber-600">{importResult.diferenciasDetectadas}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Registros conciliados:</span><span className="font-semibold text-emerald-600">
+                  {importResult.conciliados + importResult.diferenciasDetectadas > 0
+                    ? Math.round((importResult.conciliados / (importResult.conciliados + importResult.diferenciasDetectadas)) * 100)
+                    : 0}%
+                </span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Vales importados:</span><span className="font-semibold text-blue-600">{importResult.valesImportados}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Carrotanques importados:</span><span className="font-semibold text-cyan-600">{importResult.carrotanquesImportados}</span></div>
+              </div>
+
+              {importResult.productosDetectados.length > 0 && (
+                <div className="border-t border-slate-100 pt-3">
+                  <p className="text-xs font-semibold text-slate-500 mb-1.5">Productos detectados:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {importResult.productosDetectados.map((p) => <Badge key={p} variant="outline" className="text-xs text-slate-600">{p}</Badge>)}
+                  </div>
+                </div>
+              )}
+
+              {importResult.turnosDetectados.length > 0 && (
+                <div className="border-t border-slate-100 pt-3">
+                  <p className="text-xs font-semibold text-slate-500 mb-1.5">Turnos detectados:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {importResult.turnosDetectados.map((t) => <Badge key={t} variant="outline" className="text-xs text-slate-600">{t}</Badge>)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {importResult.diferenciasDetectadas > 0 && (
+              <div className="flex items-start gap-3 rounded-xl bg-amber-50 border border-amber-200 p-4">
+                <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">{importResult.diferenciasDetectadas} diferencia(s) detectada(s) en conciliación</p>
+                  <p className="text-xs text-amber-600 mt-0.5">Revisa el módulo de Conciliación para ver el detalle de las diferencias entre galonaje e iniciales/finales.</p>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-3 justify-center">
-              <Button variant="outline" onClick={handleDownloadErrors} className="gap-1.5"><FileDown className="h-4 w-4" />Ver errores</Button>
+              <Button variant="outline" onClick={handleDownloadErrors} className="gap-1.5"><FileDown className="h-4 w-4" />Descargar errores</Button>
               <Button variant="outline" onClick={handleReset} className="gap-1.5"><Upload className="h-4 w-4" />Nueva importación</Button>
             </div>
           </div>
